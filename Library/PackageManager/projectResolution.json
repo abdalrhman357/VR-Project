@@ -1,0 +1,117 @@
+{
+  "context": {
+    "projectPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Packages",
+    "unityVersion": "6000.4.3f1"
+  },
+  "inputs": [
+    "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Packages/manifest.json",
+    "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Packages/packages-lock.json",
+    "/Applications/Unity/Hub/Editor/6000.4.3f1/Unity.app/Contents/Resources/PackageManager/BuiltInPackages/BuiltInPackagesCombined.sha1"
+  ],
+  "outputs": {
+    "com.unity.test-framework@1.6.0": {
+      "name": "com.unity.test-framework",
+      "displayName": "Test Framework",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.test-framework@76560ee600cb",
+      "fingerprint": "76560ee600cb07c29e08760be4a5c75da65a9d9e",
+      "editorCompatibility": "6000.0.44f1",
+      "version": "1.6.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.textmeshpro@5.0.0": {
+      "name": "com.unity.textmeshpro",
+      "displayName": "TextMeshPro",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.textmeshpro@53f43edfd2e0",
+      "fingerprint": "53f43edfd2e0bf2438ca6e2038ba12107a181253",
+      "editorCompatibility": "2023.2.0a1",
+      "version": "5.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.ugui@2.0.0": {
+      "name": "com.unity.ugui",
+      "displayName": "uGUI",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.ugui@d8a2716f3013",
+      "fingerprint": "d8a2716f30132e533c8f0cd850b4ba55bd18c2a6",
+      "editorCompatibility": "2019.2.0a1",
+      "version": "2.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.animation@1.0.0": {
+      "name": "com.unity.modules.animation",
+      "displayName": "Animation",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.animation",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.audio@1.0.0": {
+      "name": "com.unity.modules.audio",
+      "displayName": "Audio",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.audio",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.imageconversion@1.0.0": {
+      "name": "com.unity.modules.imageconversion",
+      "displayName": "Image Conversion",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.imageconversion",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.imgui@1.0.0": {
+      "name": "com.unity.modules.imgui",
+      "displayName": "IMGUI",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.imgui",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.jsonserialize@1.0.0": {
+      "name": "com.unity.modules.jsonserialize",
+      "displayName": "JSONSerialize",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.jsonserialize",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.particlesystem@1.0.0": {
+      "name": "com.unity.modules.particlesystem",
+      "displayName": "Particle System",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.particlesystem",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.physics@1.0.0": {
+      "name": "com.unity.modules.physics",
+      "displayName": "Physics",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.physics",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.modules.ui@1.0.0": {
+      "name": "com.unity.modules.ui",
+      "displayName": "UI",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.modules.ui",
+      "version": "1.0.0",
+      "source": "builtin",
+      "testable": false
+    },
+    "com.unity.ext.nunit@2.0.5": {
+      "name": "com.unity.ext.nunit",
+      "displayName": "Custom NUnit",
+      "resolvedPath": "/Users/hamzaalnajjar/projects/VR/PendulumSimulationProject/Library/PackageCache/com.unity.ext.nunit@d8c07649098d",
+      "fingerprint": "d8c07649098d3936da4c8ab500960c1776b44592",
+      "editorCompatibility": "2019.4.0a1",
+      "version": "2.0.5",
+      "source": "builtin",
+      "testable": false
+    }
+  }
+}

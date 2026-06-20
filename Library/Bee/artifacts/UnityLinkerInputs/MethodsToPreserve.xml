@@ -1,0 +1,28 @@
+<linker>
+	<assembly fullname="UnityEngine.TestRunner" ignoreIfMissing="1">
+		<type fullname="UnityEngine.TestRunner.Utils.TestRunCallbackListener">
+			<method name="RunFinished"/>
+			<method name="RunStarted"/>
+			<method name="TestFinished"/>
+			<method name="TestStarted"/>
+		</type>
+		<type fullname="UnityEngine.TestTools.TestRunner.Callbacks.PlayerQuitHandler">
+			<method name="RunFinished"/>
+			<method name="RunStarted"/>
+			<method name="TestFinished"/>
+			<method name="TestStarted"/>
+		</type>
+		<type fullname="UnityEngine.TestTools.TestRunner.Callbacks.PlayModeRunnerCallback">
+			<method name="RunFinished"/>
+			<method name="RunStarted"/>
+			<method name="TestFinished"/>
+			<method name="TestStarted"/>
+		</type>
+		<type fullname="UnityEngine.TestTools.TestRunner.Callbacks.RemoteTestResultSender">
+			<method name="RunFinished"/>
+			<method name="RunStarted"/>
+			<method name="TestFinished"/>
+			<method name="TestStarted"/>
+		</type>
+	</assembly>
+</linker>
