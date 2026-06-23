@@ -30,6 +30,10 @@ public class DistanceConstraint
 
         // 1. حساب الخطأ الطبيعي مع تطبيق المرونة (Stiffness)
         float error = currentDistance - RestLength;
+
+        if (error < 0f) 
+            return;
+
         Vector3 correction = delta.normalized * (error * Stiffness);
 
         // 2. التحقق من حد الأمان (Max Stretch)

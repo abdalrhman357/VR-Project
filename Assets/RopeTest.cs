@@ -4,26 +4,35 @@ public class RopeTest : MonoBehaviour
 {
     private Rope rope;
     public LineRenderer lineRenderer;
-
+    
     [Header("settings material")]
     public RopeMaterial ropeMaterial = RopeMaterial.Rubber;
     void Start()
     {
-        // إنشاء حبل طوله 10 وحدات، ومقسم إلى 15 جزيء
-        rope = new Rope(transform.position, 10f, 15,ropeMaterial);
+        
+        // rope = new Rope(transform.position, 10f, 15,ropeMaterial);
 
-        // VerletParticle bucket = rope.Particles[15];
+        // // VerletParticle bucket = rope.Particles[15];
 
-        // bucket.Position += new Vector3(4f, 0f, 0f);
-        // Vector3 initialVelocity = new Vector3(0f, 0f, 0.15f);
-        // bucket.PreviousPosition = bucket.Position - initialVelocity;
-        // إعطاء دفعة ابتدائية (سرعة) لآخر جزيء في الحبل ليتأرجح مثل البندول
-        rope.Particles[rope.Particles.Count - 1].PreviousPosition += (Vector3.left * 0.2f);
+        // // bucket.Position += new Vector3(4f, 0f, 0f);
+        // // Vector3 initialVelocity = new Vector3(0f, 0f, 0.15f);
+        // // bucket.PreviousPosition = bucket.Position - initialVelocity;
+        // // إعطاء دفعة ابتدائية (سرعة) لآخر جزيء في الحبل ليتأرجح مثل البندول
+        // rope.Particles[rope.Particles.Count - 1].PreviousPosition += (Vector3.left * 0.2f);
 
         // VerletParticle bucket = rope.Particles[rope.Particles.Count - 1];
 
         // // رفعنا الدلو للأعلى ولليسار لكي يسقط بقوة ونرى تمدد المطاط!
         // bucket.Position += new Vector3(4f, 4f, 0f);
+        // إنشاء الحبل
+        rope = new Rope(transform.position, 10f, 15, ropeMaterial);// حبل طوله 10 وحدات، ومقسم إلى 15 جزيء
+        Vector3 initialVelocity = new Vector3(0.05f, 0f, 0.02f);        VerletParticle bucket = rope.Particles[rope.Particles.Count - 1];
+
+        // السر هنا: الدفع في اتجاهين معاً (X و Z) بدلاً من اتجاه واحد
+        Vector3 initialPush = new Vector3(initialVelocity.x, 0f, initialVelocity.y);
+        
+
+        bucket.PreviousPosition = bucket.Position - initialPush;
     }   
 
     void Update()

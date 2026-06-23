@@ -59,7 +59,7 @@ public class Rope
             particle.UpdateParticle(deltaTime, gravity);
         }
 
-        for(int iteration = 0; iteration < 10; iteration++)
+        for(int iteration = 0; iteration < 13; iteration++)
         {
       
             foreach(var constraint in Constraints)
