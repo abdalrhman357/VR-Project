@@ -1,0 +1,473 @@
+#pragma kernel DetectHits
+#pragma kernel ApplyPaint
+#pragma kernel UpdateWetness
+#pragma kernel InitializeCanvas
+#pragma kernel PrepareDispatchArgs
+#pragma kernel ClearCellLocks
+
+struct HitData {
+    float2 uv;        // 0-7
+    float speed;      // 8-11
+    float2 strokeDir; // 12-19
+    float massScale;  // 20-23
+    float viscosity;  // 24-27
+    float _pad;       // 28-31
+    float4 color;     // 32-47
+};
+
+// Buffers from FluidSim
+RWStructuredBuffer<float3> Positions;
+RWStructuredBuffer<float3> Velocities;
+
+// Append buffer for hits
+AppendStructuredBuffer<HitData> Hits;
+RWStructuredBuffer<uint> DispatchArgs;
+RWStructuredBuffer<uint> CellLocks;
+
+// Canvas State Textures
+RWTexture2D<float4> PaintTex;
+RWTexture2D<float4> WetTex;
+Texture2D<float4> WetTexRead;
+RWTexture2D<float4> WetTexWrite;
+RWTexture2D<float> WetTimer;
+RWTexture2D<float> ThicknessMap;
+Texture2D<float> GrainMap;
+
+// Settings
+float4x4 worldToLocal;
+float canvasWidth;
+float canvasHeight;
+float hitThreshold;
+uint numParticles;
+float referenceMass;
+float2 massScaleClamp;
+float deltaTime;
+float humidity;
+float absorptionRate;
+float grainStrength;
+float wetSpreadRate;
+float brushSizeScale;
+
+// Paint settings for the current source
+float4 paintColor;
+float paintViscosity;
+float paintMass;
+
+[numthreads(8,8,1)]
+void InitializeCanvas(uint3 id : SV_DispatchThreadID)
+{
+    uint width, height;
+    PaintTex.GetDimensions(width, height);
+    if (id.x >= width || id.y >= height) return;
+    
+    PaintTex[id.xy] = float4(1.0, 1.0, 1.0, 1.0);
+    WetTex[id.xy] = float4(0.0, 0.0, 0.0, 0.0);
+    WetTimer[id.xy] = 0.0;
+    ThicknessMap[id.xy] = 0.0;
+}
+
+[numthreads(256, 1, 1)]
+void DetectHits(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numParticles) return;
+
+    float3 pos = Positions[id.x];
+    
+    // Transform to canvas local space
+    float4 localPos4 = mul(worldToLocal, float4(pos, 1.0));
+    float3 localPos = localPos4.xyz / localPos4.w; // Perspective divide just in case
+
+    // Canvas is on the XY plane in its local space, with normal = Z or up = Y depending on rotation.
+    // PaintCanvas.cs uses: Vector3 n = PaintNormalLocal.normalized;
+    // localPos is already in canvas local space. Let's assume PaintNormalLocal is (0,1,0) by default.
+    // We pass worldToLocal directly from the Canvas.
+    // To make it simple, we use the same dot product logic:
+    // Wait, let's just assume normal is (0,1,0) since it's local.
+    // Let's pass normal and tangent vectors.
+    
+    // A Unity Quad lies on the local XY plane, so the distance from the plane is its local Z axis.
+    float planeDist = localPos.z;
+    
+    if (abs(planeDist) <= hitThreshold)
+    {
+        // Check bounds (u = X, v = Y)
+        float u = localPos.x;
+        float v = localPos.y;
+        
+        if (abs(u) <= canvasWidth * 0.5 && abs(v) <= canvasHeight * 0.5)
+        {
+            // We have a hit!
+            float2 uv = float2(u / canvasWidth + 0.5, v / canvasHeight + 0.5);
+            
+            float3 vel = Velocities[id.x];
+            float speed = length(vel);
+            
+            // Stroke dir in local space
+            float4 localVel4 = mul(worldToLocal, float4(vel, 0.0));
+            float3 localVel = localVel4.xyz;
+            float2 velInPlane = float2(localVel.x, localVel.y);
+            float2 strokeDir = length(velInPlane) > 0.001 ? normalize(velInPlane) : float2(0, 0);
+
+            float refMass = max(referenceMass, 0.00001);
+            float massSc = clamp(sqrt(paintMass / refMass), massScaleClamp.x, massScaleClamp.y);
+
+            HitData hit;
+            hit.uv = uv;
+            hit.speed = speed;
+            hit.strokeDir = strokeDir;
+            hit.massScale = massSc;
+            hit.viscosity = paintViscosity;
+            hit._pad = 0.0; // Initialize padding to fix metal compilation error
+            hit.color = paintColor;
+
+            // Use InterlockedExchange on a cell-lock buffer to prevent race conditions and overdraw
+            uint cellX = (uint)(uv.x * 64.0);
+            uint cellY = (uint)(uv.y * 64.0);
+            uint cellIdx = cellY * 64 + cellX;
+            uint prev;
+            InterlockedExchange(CellLocks[cellIdx], 1, prev);
+            
+            if (prev == 0) 
+            {
+                Hits.Append(hit);
+            }
+        }
+    }
+}
+
+float4 SubtractiveMix(float4 c1, float4 c2, float t)
+{
+    float3 cmy1 = float3(1.0 - c1.r, 1.0 - c1.g, 1.0 - c1.b);
+    float3 cmy2 = float3(1.0 - c2.r, 1.0 - c2.g, 1.0 - c2.b);
+    float3 mixed = lerp(cmy1, cmy2, t);
+    return float4(
+        clamp(1.0 - mixed.x, 0.0, 1.0),
+        clamp(1.0 - mixed.y, 0.0, 1.0),
+        clamp(1.0 - mixed.z, 0.0, 1.0),
+        lerp(c1.a, c2.a, t)
+    );
+}
+
+void BlendPixel(uint2 px, float4 newColor, float alpha)
+{
+    uint width, height;
+    PaintTex.GetDimensions(width, height);
+    if (px.x >= width || px.y >= height) return;
+
+    float4 existing = PaintTex[px];
+    bool isWet = WetTimer[px] > 0.0;
+
+    float grain = GrainMap[px];
+    float grainAbsorp = lerp(1.0, 0.35, grainStrength * (1.0 - grain));
+    float finalAlpha = clamp(alpha * newColor.a * grainAbsorp, 0.0, 1.0);
+
+    float4 solidColor = float4(newColor.rgb, 1.0);
+    float4 paintColorVal = solidColor;
+
+    if (isWet && humidity > 0.2)
+    {
+        paintColorVal = SubtractiveMix(solidColor, WetTex[px], humidity * 0.7);
+    }
+
+    float4 finalColor = lerp(existing, paintColorVal, finalAlpha);
+    
+    PaintTex[px] = finalColor;
+    WetTex[px] = paintColorVal;
+
+    float currentThickness = ThicknessMap[px];
+    ThicknessMap[px] = clamp(currentThickness + finalAlpha * 0.5, 0.0, 3.0);
+
+    float dryTime = lerp(0.4, 6.0, humidity) * (1.0 + ThicknessMap[px] * 0.3);
+    WetTimer[px] = dryTime;
+}
+
+// 2D Value Noise for organic brush edges
+float hash21(float2 p) {
+    return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float valueNoise(float2 p) {
+    float2 i = floor(p);
+    float2 f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n00 = hash21(i + float2(0.0, 0.0));
+    float n10 = hash21(i + float2(1.0, 0.0));
+    float n01 = hash21(i + float2(0.0, 1.0));
+    float n11 = hash21(i + float2(1.0, 1.0));
+    return lerp(lerp(n00, n10, f.x), lerp(n01, n11, f.x), f.y);
+}
+
+void DrawSpot_GPU(uint width, uint height, float2 centerUV, int r, float4 tintedColor, float aspect, float strength, float2 strokeDir, uint seed, bool addNoise)
+{
+    float noiseOX = hash21(float2(seed, seed * 2.0)) * 1000.0;
+    float noiseOY = hash21(float2(seed * 3.0, seed * 4.0)) * 1000.0;
+
+    int2 centerPx = int2(centerUV.x * width, centerUV.y * height);
+    int scanR = round((float)r * (max(aspect, 1.0) + 1.0) * 1.1);
+
+    bool hasDir = dot(strokeDir, strokeDir) > 0.001;
+    float cosA = hasDir ? strokeDir.x : 1.0;
+    float sinA = hasDir ? strokeDir.y : 0.0;
+
+    for (int px = centerPx.x - scanR; px <= centerPx.x + scanR; px++)
+    {
+        for (int py = centerPx.y - scanR; py <= centerPx.y + scanR; py++)
+        {
+            if (px < 0 || py < 0 || px >= (int)width || py >= (int)height) continue;
+            
+            float dx = px - centerPx.x;
+            float dy = py - centerPx.y;
+            
+            float lx = dx * cosA + dy * sinA;
+            float ly = -dx * sinA + dy * cosA;
+            
+            float normDist = sqrt((lx / aspect) * (lx / aspect) + ly * ly);
+            
+            float noiseVal = addNoise ? valueNoise(float2(px * 0.12 + noiseOX, py * 0.12 + noiseOY)) * (float)r * 0.45 : 0.0;
+            float effRadius = (float)r + noiseVal;
+            
+            if (normDist > effRadius) continue;
+
+            float grain = GrainMap[int2(px, py)];
+            float grainFactor = lerp(1.0, 0.3, grainStrength * (1.0 - grain));
+
+            float t = normDist / (effRadius + 0.5);
+            float smoothT = t * t * (3.0 - 2.0 * t);
+            float alpha = pow(max(1.0 - smoothT, 0.0), 0.4) * lerp(0.7, 1.35, clamp(strength - 1.0, 0.0, 1.0)) * grainFactor;
+
+            BlendPixel(uint2(px, py), tintedColor, clamp(alpha, 0.0, 1.0));
+        }
+    }
+}
+
+// Simple pseudo-random hash function
+float randomHash(uint state)
+{
+    state ^= 2747636419u;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    return float(state) / 4294967295.0;
+}
+
+StructuredBuffer<HitData> ReadHits;
+
+[numthreads(64, 1, 1)]
+void ApplyPaint(uint3 id : SV_DispatchThreadID)
+{
+    uint count = DispatchArgs[3];
+    if (id.x >= count) return;
+
+    HitData hit = ReadHits[id.x];
+    
+    uint width, height;
+    PaintTex.GetDimensions(width, height);
+    
+    float speedF = clamp(hit.speed / 6.0, 0.0, 1.0);
+    float absF = 1.0 - absorptionRate * 0.4;
+    float viscF = clamp(1.5 / max(hit.viscosity, 0.1), 0.5, 2.0);
+    float baseRadius = 0.03 * (0.5 + speedF) * absF * viscF * clamp(hit.massScale, 0.5, 3.0);
+
+    // Grain-based radius modification
+    int cx = clamp(round(hit.uv.x * width), 0, (int)width - 1);
+    int cy = clamp(round(hit.uv.y * height), 0, (int)height - 1);
+    float g = GrainMap[int2(cx, cy)];
+    baseRadius *= 1.0 + grainStrength * (g - 0.5) * 0.4;
+
+    // Hard cap the radius to prevent excessive nested loop iterations causing TDR/performance issues
+    int r = clamp(max(2, round(baseRadius * width * brushSizeScale)), 2, 40);
+    
+    // Compute Aspect
+    float dynamicMaxStrokeAspect = clamp(1.0 + hit.speed * 0.5, 1.0, 4.0);
+    float aspect = lerp(1.0, dynamicMaxStrokeAspect, speedF * 0.7);
+
+    // Tint
+    float tintT = speedF * 0.4;
+    float4 tintedColor = lerp(hit.color, lerp(hit.color, float4(1,1,1,1), 0.25), tintT);
+
+    float strength = clamp(hit.massScale, 0.25, 3.0);
+
+    // Draw main spot (addNoise = true)
+    DrawSpot_GPU(width, height, hit.uv, r, tintedColor, aspect, strength, hit.strokeDir, id.x, true);
+
+    // Splatters
+    if (hit.speed > 1.5 || hit.viscosity < 2.0)
+    {
+        float viscMult = clamp(1.5 / max(hit.viscosity, 0.1), 0.5, 2.5);
+        float dynamicSplatterCount = clamp(hit.speed * 2.0, 0.0, 20.0);
+        int droplets = round(dynamicSplatterCount * clamp(hit.speed / 8.0, 0.0, 1.0) * viscMult);
+        float dynamicSplatterSpread = clamp((hit.speed * 0.05) + (1.0 / max(hit.viscosity, 0.1)) * 0.1, 0.0, 1.0);
+
+        uint seedState = id.x * 1000;
+        for (int i = 0; i < droplets; i++)
+        {
+            seedState += 1;
+            float randAngle = randomHash(seedState) * 3.14159 * 2.0;
+            seedState += 1;
+            float randDist = (1.5 + randomHash(seedState) * 1.7) * (float)r / (float)width * dynamicSplatterSpread * viscMult;
+            
+            float2 dropUV = hit.uv + float2(cos(randAngle) * randDist, sin(randAngle) * randDist);
+            
+            if (dropUV.x < 0.0 || dropUV.x > 1.0 || dropUV.y < 0.0 || dropUV.y > 1.0) continue;
+
+            seedState += 1;
+            int minBrushR = max(4, round((float)width * 0.008 * 0.3));
+            int dropR = max(minBrushR, round((float)r * (0.06 + randomHash(seedState) * 0.16)));
+            
+            // Splatters don't use noise (addNoise = false)
+            DrawSpot_GPU(width, height, dropUV, dropR, tintedColor, 1.0, strength * 0.75, float2(0,0), seedState, false);
+        }
+    }
+}
+
+float2 flowDir;
+float tiltAngle;
+
+[numthreads(8,8,1)]
+void UpdateWetness(uint3 id : SV_DispatchThreadID)
+{
+    uint width, height;
+    PaintTex.GetDimensions(width, height);
+    if (id.x >= width || id.y >= height) return;
+
+    float myWet = WetTimer[id.xy];
+    float myThick = ThicknessMap[id.xy];
+    float4 myColor = WetTexRead[id.xy];
+    
+    // Capillary spread
+    if (myWet > 0.0 && myThick >= 0.05 && humidity >= 0.3)
+    {
+        float prob = myThick * wetSpreadRate * humidity;
+        // Simplified probabilistic spread over time:
+        // We simulate spreading by just diffusing locally
+        
+        float spreadA = 0.025 * myThick * humidity * deltaTime * 60.0; // scale up by time
+        
+        if (spreadA > 0.001)
+        {
+            // Gather from self to give to others? No, easier to gather FROM others to SELF for capillary.
+            // But capillary diffuses in all directions. 
+            // We can gather from 4 neighbours:
+            float4 sumColor = float4(0,0,0,0);
+            float sumWeight = 0;
+            
+            int2 offsets[4] = { int2(1,0), int2(-1,0), int2(0,1), int2(0,-1) };
+            for(int i=0; i<4; i++)
+            {
+                int2 nPos = int2(id.x, id.y) + offsets[i];
+                if (nPos.x >= 0 && nPos.y >= 0 && nPos.x < (int)width && nPos.y < (int)height)
+                {
+                    float nThick = ThicknessMap[nPos];
+                    if (nThick >= 0.05)
+                    {
+                        float4 nColor = WetTexRead[nPos];
+                        float nSpreadA = 0.025 * nThick * humidity * deltaTime * 60.0;
+                        sumColor += nColor * nSpreadA;
+                        sumWeight += nSpreadA;
+                    }
+                }
+            }
+            
+            if (sumWeight > 0.0)
+            {
+                float blend = clamp(sumWeight, 0.0, 1.0);
+                myColor = lerp(myColor, sumColor / sumWeight, blend);
+                WetTexWrite[id.xy] = myColor;
+                PaintTex[id.xy] = myColor;
+                myThick += sumWeight * 0.1;
+                myWet = max(myWet, 0.5); // stays wet
+            }
+        }
+    }
+    
+    // --- DRIP / FLOW LOGIC ---
+    // If canvas is tilted, gravity pulls paint
+    float sinTilt = sin(tiltAngle * 3.14159 / 180.0);
+    float flowSpeed = sinTilt * wetSpreadRate * 2.0;
+    
+    if (flowSpeed > 0.001 && length(flowDir) > 0.01)
+    {
+        float2 normFlow = normalize(flowDir);
+        // Upstream pixel is in the OPPOSITE direction of flow
+        int2 upOffset = int2(round(-normFlow.x), round(-normFlow.y));
+        int2 upPos = int2(id.x, id.y) + upOffset;
+        
+        float upThick = 0.0;
+        float upWet = 0.0;
+        float4 upColor = float4(0,0,0,0);
+        
+        if (upPos.x >= 0 && upPos.y >= 0 && upPos.x < (int)width && upPos.y < (int)height)
+        {
+            upThick = ThicknessMap[upPos];
+            upWet = WetTimer[upPos];
+            upColor = WetTexRead[upPos];
+        }
+        
+        // How much thickness I lose to downstream
+        float loss = (myWet > 0.0) ? (flowSpeed * deltaTime * myThick) : 0.0;
+        
+        // How much thickness I gain from upstream
+        float gain = (upWet > 0.0) ? (flowSpeed * deltaTime * upThick) : 0.0;
+        
+        // Update thickness
+        myThick = max(0.0, myThick - loss + gain);
+        
+        // Blend color if gaining
+        if (gain > 0.0)
+        {
+            float blend = min(1.0, gain / max(0.001, myThick));
+            myColor = lerp(myColor, upColor, blend);
+            
+            WetTexWrite[id.xy] = myColor;
+            PaintTex[id.xy] = myColor;
+            myWet = max(myWet, upWet * 0.9);
+        }
+    }
+    
+    // --- DRYING LOGIC ---
+    if (myWet > 0.0)
+    {
+        myWet -= deltaTime;
+        
+        if (myThick > 0.0)
+        {
+            myThick = max(0.0, myThick - deltaTime * 0.015);
+        }
+
+        if (myWet <= 0.0)
+        {
+            myWet = 0.0;
+            // When dry, we don't clear PaintTex, we just clear WetTex
+            WetTexWrite[id.xy] = float4(0,0,0,0);
+        }
+    }
+    else
+    {
+        // If not wet, just pass through the current color to the write buffer so we don't clear it
+        WetTexWrite[id.xy] = myColor;
+    }
+    
+    ThicknessMap[id.xy] = myThick;
+    WetTimer[id.xy] = myWet;
+}
+
+[numthreads(1, 1, 1)]
+void PrepareDispatchArgs(uint3 id : SV_DispatchThreadID)
+{
+    uint count = DispatchArgs[0];
+    DispatchArgs[0] = ceil((float)count / 64.0);
+    DispatchArgs[1] = 1;
+    DispatchArgs[2] = 1;
+    DispatchArgs[3] = count; // store count somewhere if we need it
+}
+
+[numthreads(64, 1, 1)]
+void ClearCellLocks(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 4096)
+    {
+        CellLocks[id.x] = 0;
+    }
+}

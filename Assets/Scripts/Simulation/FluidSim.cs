@@ -325,8 +325,11 @@ namespace Seb.Fluid.Simulation
 
 		void OnDestroy()
 		{
-			foreach (var kvp in bufferNameLookup) Release(kvp.Key);
-			spatialHash.Release();
+			if (bufferNameLookup != null)
+			{
+				foreach (var kvp in bufferNameLookup) Release(kvp.Key);
+			}
+			spatialHash?.Release();
 		}
 
 		public struct FoamParticle
