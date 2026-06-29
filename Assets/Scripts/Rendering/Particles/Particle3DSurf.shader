@@ -31,28 +31,15 @@ Shader "Fluid/Particle3DSurf"
 
         #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 			StructuredBuffer<float3> Positions;
-			StructuredBuffer<float3> Velocities;
         #endif
 
-
-        SamplerState linear_clamp_sampler;
-        float velocityMax;
-
         float scale;
-
-        sampler2D ColourMap;
 
         void vert(inout appdata_full v, out Input o)
         {
                 UNITY_INITIALIZE_OUTPUT(Input, o);
             o.uv_MainTex = v.texcoord.xy;
-
-            #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-				float speed = length(Velocities[unity_InstanceID]);
-				float speedT = saturate(speed / velocityMax);
-				float colT = speedT;
-				o.colour = tex2Dlod(ColourMap, float4(colT, 0.5,0,0));
-            #endif
+            o.colour = float4(0.0, 0.1, 0.5, 1); // dark blue
         }
 
         void setup()

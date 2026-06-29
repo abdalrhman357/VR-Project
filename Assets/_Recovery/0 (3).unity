@@ -243,7 +243,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   useExactCount: 0
-  exactParticleCount: 50000
+  exactParticleCount: 500
   particleSpawnDensity: 600
   initialVel:
     x: 0
@@ -301,6 +301,7 @@ MonoBehaviour:
   holeOffset: {x: 0, y: 0}
   compute: {fileID: 7200000, guid: 9443696acfd0ebe4fb503b56d952256c, type: 3}
   spawner: {fileID: 647353483}
+  bucketRenderer: {fileID: 1600278182}
   DensityMap: {fileID: 0}
 --- !u!4 &647353485
 Transform:
@@ -312,7 +313,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 10, y: 20, z: 10}
+  m_LocalScale: {x: 11, y: 20, z: 11}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -572,15 +573,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Seb.Fluid.Rendering.BucketRenderer
   fluidSim: {fileID: 647353484}
-  bucketColour: {r: 0.4188679, g: 0.4188679, b: 0.4188679, a: 1}
+  bucketColour: {r: 0.2, g: 0.2, b: 0.22, a: 1}
   rimColour: {r: 0.7, g: 0.7, b: 0.72, a: 1}
   metallic: 0.7
   smoothness: 0.5
   segments: 48
   wallThickness: 0.012
   rimHeight: 0.03
-  rimOverhang: 0.01
   heightScale: 0.1
+  radiusPadding: 0.08
+  bottomPadding: 0.081559986
 --- !u!4 &1600278183
 Transform:
   m_ObjectHideFlags: 0

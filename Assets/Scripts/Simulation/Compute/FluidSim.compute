@@ -1,4 +1,4 @@
-#pragma kernel ExternalForces
+﻿#pragma kernel ExternalForces
 #pragma kernel UpdateSpatialHash
 #pragma kernel Reorder
 #pragma kernel ReorderCopyBack;
@@ -98,36 +98,64 @@ float Remap01(float val, float minVal, float maxVal)
     return saturate((val - minVal) / (maxVal - minVal));
 }
 
+// Cylinder centre in world space (updated every frame from CPU)
+const float3 centre3;
+
+// Bottom hole settings
+const float  holeRadius;
+const float2 holeOffset;
+
 void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDamping)
 {
-    // Transform position/velocity to the local space of the bounding box
-    float3 posLocal = mul(worldToLocal, float4(pos, 1)).xyz;
-    float3 velocityLocal = mul(worldToLocal, float4(vel, 0)).xyz;
+    // Work in cylinder-local space (relative to the cylinder centre)
+    float3 localPos = pos - centre3;
 
-    // Calculate distance from box on each axis (negative values are outside box)
-    const float3 halfSize = 0.5;
-    const float3 edgeDst = halfSize - abs(posLocal);
+    float radius     = min(boundsSize.x, boundsSize.z) * 0.5;
+    float halfHeight = boundsSize.y * 0.5;
 
-    // Resolve collisions
-    if (edgeDst.x <= 0)
+    // --- Curved wall (XZ) ---
+    float2 xzOffset  = float2(localPos.x, localPos.z);
+    float  radialDst = length(xzOffset);
+
+    if (radialDst >= radius)
     {
-        posLocal.x = halfSize.x * sign(posLocal.x);
-        velocityLocal.x *= -1 * collisionDamping;
-    }
-    if (edgeDst.y <= 0)
-    {
-        posLocal.y = halfSize.y * sign(posLocal.y);
-        velocityLocal.y *= -1 * collisionDamping;
-    }
-    if (edgeDst.z <= 0)
-    {
-        posLocal.z = halfSize.z * sign(posLocal.z);
-        velocityLocal.z *= -1 * collisionDamping;
+        float2 n2D = xzOffset / radialDst;
+        localPos.x = n2D.x * radius;
+        localPos.z = n2D.y * radius;
+
+        float2 velXZ     = float2(vel.x, vel.z);
+        float  velNormal = dot(velXZ, n2D);
+        if (velNormal > 0)
+        {
+            velXZ -= 2.0 * velNormal * n2D;
+            velXZ *= collisionDamping;
+            vel.x  = velXZ.x;
+            vel.z  = velXZ.y;
+        }
     }
 
-    // Transform resolved position/velocity back to world space
-    pos = mul(localToWorld, float4(posLocal, 1)).xyz;
-    vel = mul(localToWorld, float4(velocityLocal, 0)).xyz;
+    // --- Bottom cap (with optional hole) ---
+    // Only test particles still inside the cylinder radially; ones that escaped
+    // through the hole and drifted outside must never be pushed back.
+    if (localPos.y <= -halfHeight && radialDst < radius)
+    {
+        float2 xzRelToHole = float2(localPos.x, localPos.z) - holeOffset;
+        bool   inHole      = (holeRadius > 0) && (length(xzRelToHole) <= holeRadius);
+        if (!inHole)
+        {
+            localPos.y = -halfHeight;
+            vel.y      = abs(vel.y) * collisionDamping;
+        }
+    }
+
+    // --- Top cap (always solid) ---
+    if (localPos.y >= halfHeight)
+    {
+        localPos.y = halfHeight;
+        vel.y      = -abs(vel.y) * collisionDamping;
+    }
+
+    pos = localPos + centre3;
 }
 
 [numthreads(ThreadGroupSize, 1, 1)]
@@ -470,8 +498,7 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 
     ResolveCollisions(pos, vel, collisionDamping);
 
-    // Write results
-    Positions[id.x] = pos;
+    Positions[id.x]  = pos;
     Velocities[id.x] = vel;
 }
 

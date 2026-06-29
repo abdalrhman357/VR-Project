@@ -242,8 +242,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f99a384512b94654fbeb7c06c43f81ba, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  useExactCount: 0
-  exactParticleCount: 50000
   particleSpawnDensity: 600
   initialVel:
     x: 0
@@ -312,7 +310,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 10, y: 20, z: 10}
+  m_LocalScale: {x: 10, y: 25, z: 10}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -331,7 +329,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Seb.Fluid.Demo.CylinderDragger
   dragKey: 103
   followSpeed: 3.0905342
-  orbitCam: {fileID: 881847625}
+  orbitCam: {fileID: 0}
 --- !u!1 &881847624
 GameObject:
   m_ObjectHideFlags: 0
@@ -542,60 +540,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1600278181
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1600278183}
-  - component: {fileID: 1600278182}
-  m_Layer: 0
-  m_Name: BucketRenderer
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1600278182
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1600278181}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Seb.Fluid.Rendering.BucketRenderer
-  fluidSim: {fileID: 647353484}
-  bucketColour: {r: 0.4188679, g: 0.4188679, b: 0.4188679, a: 1}
-  rimColour: {r: 0.7, g: 0.7, b: 0.72, a: 1}
-  metallic: 0.7
-  smoothness: 0.5
-  segments: 48
-  wallThickness: 0.012
-  rimHeight: 0.03
-  rimOverhang: 0.01
-  heightScale: 0.1
---- !u!4 &1600278183
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1600278181}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -7.75393, y: 4.21019, z: 13.76774}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2127135365
 GameObject:
   m_ObjectHideFlags: 0
@@ -702,4 +646,3 @@ SceneRoots:
   - {fileID: 530679437}
   - {fileID: 2127135367}
   - {fileID: 1294730517}
-  - {fileID: 1600278183}

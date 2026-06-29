@@ -17,13 +17,8 @@ Shader "Fluid/ParticleBillboard" {
 			#include "UnityCG.cginc"
 			
 			StructuredBuffer<float3> Positions;
-			StructuredBuffer<float3> Velocities;
-			Texture2D<float4> ColourMap;
-			SamplerState linear_clamp_sampler;
-			float velocityMax;
 
 			float scale;
-			float3 colour;
 
 			float4x4 localToWorld;
 
@@ -46,11 +41,7 @@ Shader "Fluid/ParticleBillboard" {
 				float4 viewPos = mul(UNITY_MATRIX_V, float4(centreWorld, 1)) + float4(objectVertPos, 0);
 				o.pos = mul(UNITY_MATRIX_P, viewPos);
 
-
-				float speed = length(Velocities[instanceID]);
-				float speedT = saturate(speed / velocityMax);
-				float colT = speedT;
-				o.colour = ColourMap.SampleLevel(linear_clamp_sampler, float2(colT, 0.5), 0);
+				o.colour = float3(0.0, 0.1, 0.5); // dark blue
 
 				return o;
 			}
