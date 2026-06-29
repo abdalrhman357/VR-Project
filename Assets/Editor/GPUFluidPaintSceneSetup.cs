@@ -31,25 +31,49 @@ public class GPUFluidPaintSceneSetup
             fluidPos = fluidSim.transform.position;
         }
 
+        // 1.5 Create the Rope
+        GameObject ropeObj = new GameObject("Rope_Pivot");
+        // Place rope top higher up by the length of the rope, so the bucket rests exactly at fluidPos
+        ropeObj.transform.position = fluidPos + new Vector3(0, 10f, 0); 
+        
+        RopeFluidContainer ropeContainer = ropeObj.AddComponent<RopeFluidContainer>();
+        ropeContainer.fluidSimulation = fluidSim;
+        ropeContainer.ropeLength = 10f;
+        ropeContainer.segmentCount = 15;
+        ropeContainer.ropeMaterial = RopeMaterial.Rubber;
+        ropeContainer.bendingStiffness = 0.2f;
+
+        LineRenderer ropeLr = ropeObj.AddComponent<LineRenderer>();
+        ropeLr.startWidth = 0.2f;
+        ropeLr.endWidth = 0.2f;
+        ropeLr.positionCount = 0;
+        Shader ropeShader = Shader.Find("Sprites/Default");
+        if (ropeShader != null)
+        {
+            ropeLr.sharedMaterial = new Material(ropeShader);
+            ropeLr.sharedMaterial.color = Color.black;
+        }
+        ropeContainer.lineRenderer = ropeLr;
+
         // 2. Create the Canvas
         GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
         quad.name = "PaintCanvas_Surface";
-        // Position it 15 units below the fluid sim so there is a clear gap
-        quad.transform.position = fluidPos + new Vector3(0, -15f, 0); 
+        // Position it 8 units below the fluid sim so there is a clear gap for dripping (accounting for rope stretch)
+        quad.transform.position = fluidPos + new Vector3(0, -10f, 0); 
         quad.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-        quad.transform.localScale = new Vector3(12f, 12f, 1f);
+        quad.transform.localScale = new Vector3(16f, 16f, 1f); // Make canvas slightly larger for swinging
 
         // Assign a bright Unlit material to the Canvas so the paint is clearly visible
         Renderer quadRenderer = quad.GetComponent<Renderer>();
         Shader unlitShader = Shader.Find("Unlit/Texture");
         if (unlitShader != null)
         {
-            quadRenderer.material = new Material(unlitShader);
+            quadRenderer.sharedMaterial = new Material(unlitShader);
         }
 
         PaintCanvas canvas = quad.AddComponent<PaintCanvas>();
-        canvas.CanvasWidth = 12f;
-        canvas.CanvasHeight = 12f;
+        canvas.CanvasWidth = 1;
+        canvas.CanvasHeight = 1;
         canvas.TextureRes = 1024;
         canvas.PaintNormalLocal = Vector3.forward; // A Unity Quad's normal is +Z locally
         canvas.HitThreshold = 1.0f; // Increase threshold slightly just in case
@@ -92,11 +116,11 @@ public class GPUFluidPaintSceneSetup
         RenderSettings.ambientIntensity = 1.0f;
         RenderSettings.ambientLight = new Color(0.3f, 0.3f, 0.3f);
 
-        // Adjust Camera to see both the cylinder and the canvas
+        // Adjust Camera to see both the cylinder, the rope, and the canvas
         Camera cam = Camera.main;
         if (cam != null)
         {
-            cam.transform.position = new Vector3(0, -2f, -25f);
+            cam.transform.position = new Vector3(0, 0f, -35f);
             cam.transform.rotation = Quaternion.Euler(0f, 0f, 0f);
             
             // If there's an OrbitCam, set its pivot to the middle

@@ -72,7 +72,11 @@ namespace Seb.Fluid.Rendering
 
         // ─────────────────────────────────────────────────────────────────────────
 
-        void OnEnable()  => Rebuild();
+        void OnEnable()
+        {
+            bucketColour = Color.white;
+            Rebuild();
+        }
         void OnDisable() => Cleanup();
         void OnDestroy() => Cleanup();
 

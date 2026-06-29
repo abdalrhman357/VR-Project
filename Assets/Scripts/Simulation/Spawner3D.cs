@@ -12,7 +12,7 @@ namespace Seb.Fluid.Simulation
 		public bool useExactCount = false;
 
 		[Tooltip("Exact total number of particles to spawn (shared equally across all regions). Only used when Use Exact Count is enabled.")]
-		public int exactParticleCount = 50000;
+		public int exactParticleCount = 5000;
 
 		[Header("Density Mode (used when Use Exact Count is off)")]
 		public int particleSpawnDensity = 600;
