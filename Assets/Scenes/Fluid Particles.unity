@@ -242,8 +242,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f99a384512b94654fbeb7c06c43f81ba, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  useExactCount: 0
-  exactParticleCount: 50000
+  useExactCount: 1
+  exactParticleCount: 100000
   particleSpawnDensity: 600
   initialVel:
     x: 0
@@ -258,7 +258,7 @@ MonoBehaviour:
   - centre: {x: -8.3, y: -1.3, z: -3.65}
     size: 7
     debugDisplayCol: {r: 0.09019607, g: 0.3801795, b: 1, a: 1}
-  debug_num_particles: 410758
+  debug_num_particles: 93312
   debug_spawn_volume: 686
 --- !u!114 &647353484
 MonoBehaviour:
@@ -301,6 +301,7 @@ MonoBehaviour:
   holeOffset: {x: 0, y: 0}
   compute: {fileID: 7200000, guid: 9443696acfd0ebe4fb503b56d952256c, type: 3}
   spawner: {fileID: 647353483}
+  bucketRenderer: {fileID: 0}
   DensityMap: {fileID: 0}
 --- !u!4 &647353485
 Transform:
@@ -312,7 +313,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 10, y: 20, z: 10}
+  m_LocalScale: {x: 10, y: 10, z: 10}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -329,7 +330,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8be29920d449e4740b85ea06c8beaaed, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Seb.Fluid.Demo.CylinderDragger
-  dragKey: 103
+  horizontalSpeed: 5
+  verticalSpeed: 5
   followSpeed: 3.0905342
   orbitCam: {fileID: 881847625}
 --- !u!1 &881847624
@@ -491,6 +493,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mode: 2
   scale: 4
+  particleColour: {r: 0.5019608, g: 0, b: 0.0807637, a: 1}
   colourMap:
     serializedVersion: 2
     key0: {r: 0.13363299, g: 0.34235913, b: 0.7264151, a: 1}
@@ -579,8 +582,9 @@ MonoBehaviour:
   segments: 48
   wallThickness: 0.012
   rimHeight: 0.03
-  rimOverhang: 0.01
-  heightScale: 0.1
+  heightScale: 1
+  radiusPadding: 0.08
+  bottomPadding: 0.155
 --- !u!4 &1600278183
 Transform:
   m_ObjectHideFlags: 0

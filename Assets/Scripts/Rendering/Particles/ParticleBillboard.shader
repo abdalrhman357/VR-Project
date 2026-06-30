@@ -1,6 +1,6 @@
 Shader "Fluid/ParticleBillboard" {
 	Properties {
-		
+		_ParticleColour ("Particle Colour", Color) = (0, 0.1, 0.5, 1)
 	}
 	SubShader {
 
@@ -19,8 +19,8 @@ Shader "Fluid/ParticleBillboard" {
 			StructuredBuffer<float3> Positions;
 
 			float scale;
-
 			float4x4 localToWorld;
+			float4 _ParticleColour;
 
 			struct v2f
 			{
@@ -41,7 +41,7 @@ Shader "Fluid/ParticleBillboard" {
 				float4 viewPos = mul(UNITY_MATRIX_V, float4(centreWorld, 1)) + float4(objectVertPos, 0);
 				o.pos = mul(UNITY_MATRIX_P, viewPos);
 
-				o.colour = float3(0.0, 0.1, 0.5); // dark blue
+				o.colour = _ParticleColour.rgb;
 
 				return o;
 			}
