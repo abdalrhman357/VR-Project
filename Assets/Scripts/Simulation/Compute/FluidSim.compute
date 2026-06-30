@@ -156,9 +156,10 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
                 float3 prevPos = pos - vel * dt;
                 float prevLocalY = prevPos.y - prevCentre3.y;
                 if (prevLocalY > -halfHeight - 0.1)
-            {
-                localPos.y = -halfHeight;
-                vel.y      = abs(vel.y) * collisionDamping;
+                {
+                    localPos.y = -halfHeight;
+                    vel.y      = abs(vel.y) * collisionDamping;
+                }
             }
         }
 
