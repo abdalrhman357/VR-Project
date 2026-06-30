@@ -98,6 +98,7 @@ namespace Seb.Fluid.Simulation
 		Spawner3D.SpawnData spawnData;
 		Dictionary<ComputeBuffer, string> bufferNameLookup;
 		Vector3 prevCentre3;
+		Quaternion prevRotation;
 
 		void Start()
 		{
@@ -202,14 +203,15 @@ namespace Seb.Fluid.Simulation
 			{
 				float simHalfH = Scale.y * 0.5f;
 				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
-				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
+				float bucketBottom = -simHalfH; // Physics boundary does not use visual padding
 				float centreY      = (bucketTop + bucketBottom) * 0.5f;
-				prevCentre3 = transform.position + Vector3.up * centreY;
+				prevCentre3 = transform.position + transform.up * centreY;
 			}
 			else
 			{
 				prevCentre3 = transform.position;
 			}
+			prevRotation = transform.rotation;
 
 			if (renderToTex3D) RunSimulationFrame(0);
 
@@ -241,10 +243,12 @@ namespace Seb.Fluid.Simulation
 				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
 				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
 				float centreY      = (bucketTop + bucketBottom) * 0.5f;
-				targetCentre = transform.position + Vector3.up * centreY;
+				targetCentre = transform.position + transform.up * centreY;
 			}
 			Vector3 startCentre = prevCentre3;
 			Vector3 endCentre = targetCentre;
+			Quaternion startRot = prevRotation;
+			Quaternion endRot = transform.rotation;
 
 			UpdateSettings(subStepDeltaTime, frameDeltaTime);
 
@@ -253,12 +257,28 @@ namespace Seb.Fluid.Simulation
 				simTimer += subStepDeltaTime;
 				float t0 = (float)i / iterationsPerFrame;
 				float t1 = (float)(i + 1) / iterationsPerFrame;
-				compute.SetVector("prevCentre3", Vector3.Lerp(startCentre, endCentre, t0));
-				compute.SetVector("centre3", Vector3.Lerp(startCentre, endCentre, t1));
+				
+				Vector3 c0 = Vector3.Lerp(startCentre, endCentre, t0);
+				Vector3 c1 = Vector3.Lerp(startCentre, endCentre, t1);
+				Quaternion r0 = Quaternion.Slerp(startRot, endRot, t0);
+				Quaternion r1 = Quaternion.Slerp(startRot, endRot, t1);
+				
+				Matrix4x4 prevL2W = Matrix4x4.TRS(c0, r0, Vector3.one);
+				Matrix4x4 l2W = Matrix4x4.TRS(c1, r1, Vector3.one);
+				
+				compute.SetMatrix("prevLocalToWorld", prevL2W);
+				compute.SetMatrix("prevWorldToLocal", prevL2W.inverse);
+				compute.SetMatrix("localToWorld", l2W);
+				compute.SetMatrix("worldToLocal", l2W.inverse);
+
+				compute.SetVector("prevCentre3", c0);
+				compute.SetVector("centre3", c1);
+				
 				RunSimulationStep();
 			}
 			
 			prevCentre3 = endCentre;
+			prevRotation = endRot;
 
 			if (foamActive)
 			{
@@ -325,20 +345,20 @@ namespace Seb.Fluid.Simulation
 			Vector3 simBoundsSize   = transform.localScale;
 			Vector3 simBoundsCentre = transform.position;
 
-			// When a BucketRenderer is assigned, collision bounds = bucket inner wall.
-			// The bucket inner wall = simR + radiusPadding, so we pass that directly
-			// as boundsSize. This way changing Scale changes both equally.
+			// When a BucketRenderer is assigned, we determine the physics bounds using the
+			// unmodified scale. The visual bucket includes padding (radiusPadding, bottomPadding)
+			// so it sits slightly outside the collision boundary, preventing visual seeping.
 			if (bucketRenderer != null)
 			{
 				float simHalfH = Scale.y * 0.5f;
-				float innerR   = Scale.x * 0.5f + bucketRenderer.radiusPadding;
+				float simR     = Scale.x * 0.5f;
 
 				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
-				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
+				float bucketBottom = -simHalfH; // Physics boundary does not use visual padding
 				float bucketHeight =  bucketTop - bucketBottom;
 				float centreY      = (bucketTop + bucketBottom) * 0.5f;
 
-				simBoundsSize   = new Vector3(innerR * 2f, bucketHeight, innerR * 2f);
+				simBoundsSize   = new Vector3(simR * 2f, bucketHeight, simR * 2f);
 				simBoundsCentre = transform.position + Vector3.up * centreY;
 			}
 
