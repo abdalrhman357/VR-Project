@@ -122,11 +122,9 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
 
     // Particles that have already escaped below the cylinder (fell through
     // the hole) must be completely free – no wall or cap constraints.
-    // A small margin prevents particles right at the cap from escaping prematurely.
-    bool escapedBelow = localPos.y < -(halfHeight + 0.05);
+    bool escapedBelow = localPos.y < -(halfHeight + 0.05) && prevLocalY < -(halfHeight + 0.05);
 
-    // Only apply side wall collision if the particle hasn't already escaped the bottom of the bucket
-    if (radialDst >= radius && prevLocalY > -halfHeight - 0.1)
+    if (!escapedBelow)
     {
         // --- Curved wall (XZ) ---
         float2 xzOffset  = float2(localPos.x, localPos.z);
@@ -138,16 +136,9 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
             localPos.x = n2D.x * radius;
             localPos.z = n2D.y * radius;
 
-    // --- Bottom cap (with optional hole) ---
-    // Only test particles still inside the cylinder radially; ones that escaped
-    // through the hole and drifted outside must never be pushed back.
-    if (localPos.y <= -halfHeight && radialDst <= radius)
-    {
-        float2 xzRelToHole = float2(localPos.x, localPos.z) - holeOffset;
-        bool   inHole      = (holeRadius > 0) && (length(xzRelToHole) <= holeRadius);
-        if (!inHole)
-        {
-            if (prevLocalY > -halfHeight - 0.1)
+            float2 velXZ     = float2(vel.x, vel.z);
+            float  velNormal = dot(velXZ, n2D);
+            if (velNormal > 0)
             {
                 velXZ -= 2.0 * velNormal * n2D;
                 velXZ *= collisionDamping;
@@ -157,7 +148,7 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
         }
 
         // --- Bottom cap (with optional hole) ---
-        // We removed the old 'radialDst' check because particles clamped by the wall 
+        // We do not check radialDst because particles clamped by the wall 
         // still need to be caught by the floor. This seals the bucket completely.
         if (localPos.y <= -halfHeight)
         {
@@ -165,8 +156,6 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
             bool   inHole      = (holeRadius > 0) && (length(xzRelToHole) <= holeRadius);
             if (!inHole)
             {
-                float3 prevPos = pos - vel * dt;
-                float prevLocalY = prevPos.y - prevCentre3.y;
                 if (prevLocalY > -halfHeight - 0.1)
                 {
                     localPos.y = -halfHeight;
