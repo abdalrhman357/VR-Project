@@ -10,8 +10,18 @@ public class RopeFluidContainer : MonoBehaviour
     public float bendingStiffness = 0.2f;
     [Tooltip("وزن السطل البلاستيكي وهو فارغ تماماً.")]
     public float emptyBucketMass = 5f;
+    [Tooltip("الكتلة الكلية للحبل بأكمله. في الواقع الحبل خفيف جداً (مثلاً 0.5) لكي لا يؤثر على حركة السطل الثقيل.")]
+    public float ropeTotalMass = 0.5f;
     [Tooltip("الكتلة الفيزيائية للجزيء الواحد (تعتمد على الكثافة). سيُحسب وزن الطلاء بضربها في عدد الجزيئات.")]
     public float fluidParticleMass = 0.012f;
+
+    [Tooltip("Air-drag damping coefficient. Controls how many swings the pendulum makes before stopping.\n\n"
+           + "0.0005 → ~3% loss/sec (very long swing, near-vacuum)\n"
+           + "0.002  → ~11% loss/sec (realistic air drag, many swings)\n"
+           + "0.005  → ~26% loss/sec (heavy air drag, fewer swings)\n"
+           + "0.02   → ~70% loss/sec (too heavy, stops almost immediately)")]
+    [Range(0.0001f, 0.01f)]
+    public float ropeDamping = 0.002f;
 
     public Color ropeColor = Color.white;
     public float ropeWidth = 0.05f;
@@ -27,10 +37,15 @@ public class RopeFluidContainer : MonoBehaviour
 
     [Header("Pendulum Swing (applied at simulation start)")]
     [Tooltip("Pull the bucket to the side before releasing it (e.g. X axis).")]
-    public Vector3 pullOffset = new Vector3(2.5f, 0f, 0f); 
+    public Vector3 pullOffset = new Vector3(1f, 0f,0f); 
 
-    [Tooltip("Push the bucket sideways as it's released to create a circular/spiral motion (e.g. Z axis).")]
-    public Vector3 pushTangential = new Vector3(0f, 0f, -0.05f);
+    [Tooltip("Push the bucket sideways as it's released to create a circular/spiral motion (e.g. Z axis). Set to zero for one-directional swing.")]
+    public Vector3 pushTangential = Vector3.zero;
+
+    [Header("Hold & Release")]
+    [Tooltip("How long (seconds) to hold the rope at the displaced position before releasing. " +
+             "During this time the fluid settles inside the bucket so it doesn't scatter on release.")]
+    public float holdDuration = 2.0f;
 
     [Header("References")]
     public FluidSim fluidSimulation;
@@ -38,13 +53,23 @@ public class RopeFluidContainer : MonoBehaviour
 
     private Rope rope;
 
+    // ── Hold & Release state ──
+    // The rope starts in "held" state: all particles are frozen at the displaced
+    // pose so the fluid can settle inside the bucket. After holdDuration elapses,
+    // the rope is released and swings naturally under gravity.
+    bool isHeld = true;
+    float holdTimer;
+
+    // Cached displaced bucket position (computed once in Start)
+    Vector3 displacedBucketPosition;
+
     void Start()
     {
         // حساب الوزن الأولي للسطل مع السائل قبل بدء المحاكاة
         float initialFluidMass = 0f;
         if (fluidSimulation != null && fluidSimulation.spawner != null)
         {
-            initialFluidMass = fluidSimulation.spawner.spawnPoints.Length * fluidParticleMass;
+            initialFluidMass = fluidSimulation.spawner.exactParticleCount * fluidParticleMass;
         }
         else if (fluidSimulation != null)
         {
@@ -54,11 +79,36 @@ public class RopeFluidContainer : MonoBehaviour
         float startingBucketMass = emptyBucketMass + initialFluidMass;
 
         // Initialize the rope physics starting from this object's position (fixed point in air)
-        rope = new Rope(transform.position, ropeLength, segmentCount, ropeMaterial, bendingStiffness, startingBucketMass);
+        rope = new Rope(transform.position, ropeLength, segmentCount, ropeMaterial, bendingStiffness, startingBucketMass, ropeTotalMass, ropeDamping);
+
+        // ---------------------------------------------------------------
+        // Compute the displaced bucket position and pose the ENTIRE rope
+        // along a taut straight line from anchor to that point.
+        // This ensures all constraints are already satisfied — no first-frame
+        // snap, no violent correction, no fluid scatter.
+        // ---------------------------------------------------------------
+        Vector3 anchor = transform.position;
+        
+        // The bucket hangs at anchor + down*ropeLength in equilibrium.
+        // pullOffset displaces it sideways. We compute the actual position
+        // along the rope's arc (preserving ropeLength distance from anchor).
+        Vector3 equilibrium = anchor + Vector3.down * ropeLength;
+        Vector3 target = equilibrium + pullOffset;
+        
+        // Preserve the rope's actual length (the bucket stays on the arc)
+        Vector3 dirFromAnchor = (target - anchor).normalized;
+        displacedBucketPosition = anchor + dirFromAnchor * ropeLength;
+        
+        // Position ALL particles along the straight line from anchor to displaced bucket.
+        // Every particle is at rest (zero velocity), constraints satisfied.
+        rope.SetDisplacedPose(anchor, displacedBucketPosition);
 
         // Auto-scale the bucket (fluidSimulation) to make it smaller
         if (fluidSimulation != null)
         {
+            // Move the bucket to the displaced position immediately so fluid spawns inside it
+            fluidSimulation.transform.position = displacedBucketPosition;
+            
             // تصغير حجم السطل الخارجي (0.85 هو حجم ممتاز، ليس صغيراً جداً وليس كبيراً)
             fluidSimulation.transform.localScale = new Vector3(2f, 5f, 2f);
             
@@ -85,7 +135,7 @@ public class RopeFluidContainer : MonoBehaviour
                 {
                     new Seb.Fluid.Simulation.Spawner3D.SpawnRegion
                     {
-                        centre = fluidSimulation.transform.position,
+                        centre = displacedBucketPosition, // Spawn fluid at the displaced bucket position
                         size = 1.6f, // حجم مناسب لكي لا يخرج عن حواف السطل (نصف القطر 1)
                         debugDisplayCol = Color.cyan
                     }
@@ -95,22 +145,10 @@ public class RopeFluidContainer : MonoBehaviour
                 spawner.exactParticleCount = 5000;
             }
         }
-        
-        // ---------------------------------------------------------------
-        // Apply an initial push at simulation start by offsetting the
-        // bucket's previous position. Verlet integration will convert
-        // this displacement into velocity automatically on the first step.
-        // ---------------------------------------------------------------
-        VerletParticle bucket = rope.Particles[rope.Particles.Count - 1];
-        
-        // 1. Pull the bucket to the side (Displacement)
-        bucket.Position = bucket.Position + pullOffset;
-        
-        // 2. Push it tangentially to create a circular/spiral motion (Velocity)
-        // In Verlet: Velocity = Position - PreviousPosition
-        // So PreviousPosition = Position - Velocity
-        bucket.PreviousPosition = bucket.Position - pushTangential;
-        // PreviousPosition is already set to the original position by the Rope constructor.
+
+        // Initialize hold state
+        isHeld = true;
+        holdTimer = 0f;
 
         if (lineRenderer == null)
         {
@@ -139,48 +177,104 @@ public class RopeFluidContainer : MonoBehaviour
 
     void Update()
     {
-        // No mouse interaction — simulation runs on its own.
+        if (rope == null)
+            return;
 
-        if (rope != null)
+        // ─── Hold Phase ───────────────────────────────────────────────
+        // During the hold phase the rope is frozen at the displaced position.
+        // The fluid simulation runs on the GPU so the fluid settles naturally
+        // inside the stationary bucket. No rope physics runs.
+        if (isHeld)
         {
-            // محاكاة نقصان وزن الدلو تدريجياً بدقة متناهية بناءً على عدد الجزيئات الفعلي المتبقي!
+            holdTimer += Time.deltaTime;
+
+            // Keep all particles frozen at the displaced pose (zero velocity)
+            rope.FreezeAllParticles();
+
+            // Keep the bucket at the displaced position
             if (fluidSimulation != null)
             {
-                VerletParticle endBucket = rope.Particles[rope.Particles.Count - 1];
-                
-                // الوزن الكلي = السطل الفارغ + (عدد الجزيئات الفعلي × كتلة الجزيء الواحد)
-                float currentFluidMass = fluidSimulation.ActiveParticleCount * fluidParticleMass;
-                endBucket.Mass = emptyBucketMass + currentFluidMass;
+                fluidSimulation.transform.position = displacedBucketPosition;
             }
 
-            // Pin the anchor (first particle) to this transform every frame so it never drifts.
-            rope.Particles[0].Position = transform.position;
-            rope.Particles[0].PreviousPosition = transform.position;
+            // Draw the rope even during hold
+            DrawRope();
 
-            rope.Simulate(Time.deltaTime, Physics.gravity);
-
-            // Draw the rope
-            if (lineRenderer != null)
+            // Release when hold duration expires
+            if (holdTimer >= holdDuration)
             {
-                lineRenderer.positionCount = rope.Particles.Count;
-                for (int i = 0; i < rope.Particles.Count; i++)
-                {
-                    lineRenderer.SetPosition(i, rope.Particles[i].Position);
-                }
+                Release();
             }
 
-            // Follow the fluid container (bucket) to the rope's end particle
-            if (fluidSimulation != null)
-            {
-                VerletParticle endBucket = rope.Particles[rope.Particles.Count - 1];
-                fluidSimulation.transform.position = endBucket.Position;
+            return; // Skip physics this frame
+        }
 
-                if (applyOverheadCamera && followBucket && Camera.main != null)
-                {
-                    Camera.main.transform.position = Vector3.Lerp(Camera.main.transform.position, endBucket.Position + cameraOffset, Time.deltaTime * 5f);
-                    // Look midway between bucket and canvas
-                    Camera.main.transform.LookAt(endBucket.Position + Vector3.down * 7.5f);
-                }
+        // ─── Swing Phase (after release) ──────────────────────────────
+        // محاكاة نقصان وزن الدلو تدريجياً بدقة متناهية بناءً على عدد الجزيئات الفعلي المتبقي!
+        if (fluidSimulation != null)
+        {
+            VerletParticle endBucket = rope.Particles[rope.Particles.Count - 1];
+            
+            // الوزن الكلي = السطل الفارغ + (عدد الجزيئات الفعلي × كتلة الجزيء الواحد)
+            float currentFluidMass = fluidSimulation.ActiveParticleCount * fluidParticleMass;
+            endBucket.Mass = emptyBucketMass + currentFluidMass;
+        }
+
+        // Anchor pinning is now handled inside Rope.Simulate's sub-step loop.
+        // We just pass the anchor position so the rope knows where to pin.
+        // Clamping deltaTime prevents spike frames from destabilizing.
+        float dt = Mathf.Min(Time.deltaTime, 1f / 30f);
+        rope.Simulate(dt, Physics.gravity, transform.position);
+
+        // Draw the rope
+        DrawRope();
+
+        // Follow the fluid container (bucket) to the rope's end particle
+        if (fluidSimulation != null)
+        {
+            VerletParticle endBucket = rope.Particles[rope.Particles.Count - 1];
+            fluidSimulation.transform.position = endBucket.Position;
+
+            if (applyOverheadCamera && followBucket && Camera.main != null)
+            {
+                Camera.main.transform.position = Vector3.Lerp(Camera.main.transform.position, endBucket.Position + cameraOffset, Time.deltaTime * 5f);
+                // Look midway between bucket and canvas
+                Camera.main.transform.LookAt(endBucket.Position + Vector3.down * 7.5f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Release the rope from the held position. Applies the tangential push
+    /// (if any) to create circular/spiral motion, then lets physics take over.
+    /// Called automatically after holdDuration, but can also be called manually.
+    /// </summary>
+    void Release()
+    {
+        isHeld = false;
+
+        // Apply tangential push for circular/spiral motion (optional).
+        // In Verlet: Velocity = Position - PreviousPosition
+        // So: PreviousPosition = Position - Velocity
+        if (pushTangential.sqrMagnitude > 0f)
+        {
+            VerletParticle bucket = rope.Particles[rope.Particles.Count - 1];
+            bucket.PreviousPosition = bucket.Position - pushTangential;
+        }
+    }
+
+    /// <summary>
+    /// Draw the rope using the LineRenderer.
+    /// Extracted into its own method to avoid duplication between hold and swing phases.
+    /// </summary>
+    void DrawRope()
+    {
+        if (lineRenderer != null)
+        {
+            lineRenderer.positionCount = rope.Particles.Count;
+            for (int i = 0; i < rope.Particles.Count; i++)
+            {
+                lineRenderer.SetPosition(i, rope.Particles[i].Position);
             }
         }
     }

@@ -28,23 +28,24 @@ public class DistanceConstraint
         if (currentDistance <= 0.0001f)
             return;
 
-        // 1. حساب الخطأ الطبيعي مع تطبيق المرونة (Stiffness)
+        Vector3 direction = delta / currentDistance; // normalized
+
+        // 1. Soft correction: push/pull toward rest length, scaled by stiffness.
+        //    Handles both compression AND extension (allows the rope to act like a stiff rod).
         float error = currentDistance - RestLength;
+        Vector3 correction = direction * (error * Stiffness);
 
-        if (error < 0f) 
-            return;
-
-        Vector3 correction = delta.normalized * (error * Stiffness);
-
-        // 2. التحقق من حد الأمان (Max Stretch)
+        // 2. Hard clamp: if the segment exceeds the absolute maximum length,
+        //    add a rigid correction for the excess ON TOP of the soft correction.
+        //    This prevents the rope from ever stretching beyond maxStretch * RestLength.
         float maxLength = RestLength * MaxStretch;
         if (currentDistance > maxLength)
         {
-            // إذا تجاوز الحد، نلغي المرونة ونطبق تصحيحاً صارماً (Rigid) للزيادة فقط
             float excess = currentDistance - maxLength;
-            correction = delta.normalized * excess;
+            correction += direction * excess;
         }
 
+        // Mass-weighted distribution
         float invMassA = ParticleA.InverseMass;
         float invMassB = ParticleB.InverseMass;
         float totalInvMass = invMassA + invMassB;
