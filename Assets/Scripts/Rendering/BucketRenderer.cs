@@ -130,8 +130,9 @@ namespace Seb.Fluid.Rendering
 
             float simHalfH = fluidSim.Scale.y * 0.5f;
             float simR     = fluidSim.Scale.x * 0.5f;
-            // innerR = simR + radiusPadding, same formula used in FluidSim.UpdateSettings
-            // so the bucket wall sits exactly on the collision boundary
+            // innerR = simR + radiusPadding. We add padding to the visual mesh
+            // so the bucket wall sits slightly outside the collision boundary (simR),
+            // preventing particles from visually poking through.
             float innerR   = simR + radiusPadding;
             float outerR   = innerR + wallThickness;
 

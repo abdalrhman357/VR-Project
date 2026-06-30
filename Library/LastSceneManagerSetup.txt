@@ -1,5 +1,5 @@
 sceneSetups:
-- path: Assets/Scenes/PaintCanvasTestScene.unity
+- path: Assets/Scenes/GPUFluidPaintTestScene.unity
   isLoaded: 1
   isActive: 1
   isSubScene: 0

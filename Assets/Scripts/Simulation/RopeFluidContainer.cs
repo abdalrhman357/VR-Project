@@ -148,8 +148,8 @@ public class RopeFluidContainer : MonoBehaviour
                     }
                 };
                 
-                spawner.useExactCount = true;
-                spawner.exactParticleCount = 5000;
+                // spawner.useExactCount = true;
+                // spawner.exactParticleCount = 5000;
             }
         }
 

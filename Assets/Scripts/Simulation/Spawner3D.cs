@@ -28,12 +28,12 @@ namespace Seb.Fluid.Simulation
 		public float debug_spawn_volume;
 
 
-		void Awake()
-		{
-			// إجبار القيم على أن تكون True و 5000 عند بدء اللعبة لتجاهل ما هو محفوظ في الـ Inspector
-			useExactCount = true;
-			exactParticleCount = 5000;
-		}
+		// void Awake()
+		// {
+		// 	// إجبار القيم على أن تكون True و 5000 عند بدء اللعبة لتجاهل ما هو محفوظ في الـ Inspector
+		// 	useExactCount = true;
+		// 	exactParticleCount = 5000;
+		// }
 
 		public SpawnData GetSpawnData()
 		{
