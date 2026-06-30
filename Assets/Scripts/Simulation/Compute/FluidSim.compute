@@ -113,6 +113,10 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     // Work in cylinder-local space (relative to the cylinder centre)
     float3 localPos = pos - centre3;
 
+    // Calculate previous local Y to determine if particle was already outside the bottom
+    float3 prevPos = pos - vel * dt;
+    float prevLocalY = prevPos.y - prevCentre3.y;
+
     float radius     = min(boundsSize.x, boundsSize.z) * 0.5;
     float halfHeight = boundsSize.y * 0.5;
 
@@ -121,7 +125,8 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     // A small margin prevents particles right at the cap from escaping prematurely.
     bool escapedBelow = localPos.y < -(halfHeight + 0.05);
 
-    if (!escapedBelow)
+    // Only apply side wall collision if the particle hasn't already escaped the bottom of the bucket
+    if (radialDst >= radius && prevLocalY > -halfHeight - 0.1)
     {
         // --- Curved wall (XZ) ---
         float2 xzOffset  = float2(localPos.x, localPos.z);
@@ -133,9 +138,16 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
             localPos.x = n2D.x * radius;
             localPos.z = n2D.y * radius;
 
-            float2 velXZ     = float2(vel.x, vel.z);
-            float  velNormal = dot(velXZ, n2D);
-            if (velNormal > 0)
+    // --- Bottom cap (with optional hole) ---
+    // Only test particles still inside the cylinder radially; ones that escaped
+    // through the hole and drifted outside must never be pushed back.
+    if (localPos.y <= -halfHeight && radialDst <= radius)
+    {
+        float2 xzRelToHole = float2(localPos.x, localPos.z) - holeOffset;
+        bool   inHole      = (holeRadius > 0) && (length(xzRelToHole) <= holeRadius);
+        if (!inHole)
+        {
+            if (prevLocalY > -halfHeight - 0.1)
             {
                 velXZ -= 2.0 * velNormal * n2D;
                 velXZ *= collisionDamping;

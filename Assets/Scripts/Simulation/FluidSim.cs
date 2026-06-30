@@ -233,13 +233,32 @@ namespace Seb.Fluid.Simulation
 		void RunSimulationFrame(float frameDeltaTime)
 		{
 			float subStepDeltaTime = frameDeltaTime / iterationsPerFrame;
+			
+			Vector3 targetCentre = transform.position;
+			if (bucketRenderer != null)
+			{
+				float simHalfH = Scale.y * 0.5f;
+				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
+				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
+				float centreY      = (bucketTop + bucketBottom) * 0.5f;
+				targetCentre = transform.position + Vector3.up * centreY;
+			}
+			Vector3 startCentre = prevCentre3;
+			Vector3 endCentre = targetCentre;
+
 			UpdateSettings(subStepDeltaTime, frameDeltaTime);
 
 			for (int i = 0; i < iterationsPerFrame; i++)
 			{
 				simTimer += subStepDeltaTime;
+				float t0 = (float)i / iterationsPerFrame;
+				float t1 = (float)(i + 1) / iterationsPerFrame;
+				compute.SetVector("prevCentre3", Vector3.Lerp(startCentre, endCentre, t0));
+				compute.SetVector("centre3", Vector3.Lerp(startCentre, endCentre, t1));
 				RunSimulationStep();
 			}
+			
+			prevCentre3 = endCentre;
 
 			if (foamActive)
 			{
@@ -334,10 +353,6 @@ namespace Seb.Fluid.Simulation
 			compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
 			compute.SetFloat("viscosityStrength",      viscosityStrength);
 			compute.SetVector("boundsSize", simBoundsSize);
-			
-			compute.SetVector("prevCentre3", prevCentre3);
-			compute.SetVector("centre3",    simBoundsCentre);
-			prevCentre3 = simBoundsCentre;
 
 			// Bottom hole
 			compute.SetFloat("holeRadius",  holeRadius);
