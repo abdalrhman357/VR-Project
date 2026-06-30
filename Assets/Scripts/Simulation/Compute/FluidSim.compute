@@ -101,8 +101,6 @@ float Remap01(float val, float minVal, float maxVal)
 }
 
 // Cylinder matrices for relative collisions
-float4x4 worldToLocal;
-float4x4 localToWorld;
 float4x4 prevWorldToLocal;
 float4x4 prevLocalToWorld;
 
