@@ -131,9 +131,10 @@ void DetectHits(uint3 id : SV_DispatchThreadID)
             hit.planeSpeed = planeSpeed;
             hit.color = paintColor;
 
-            // Use InterlockedExchange on a cell-lock buffer to prevent race conditions and overdraw
-            uint cellX = (uint)(uv.x * 64.0);
-            uint cellY = (uint)(uv.y * 64.0);
+            // Use InterlockedExchange on a cell-lock buffer to prevent race conditions and overdraw.
+            // Clamp to 63 to prevent out-of-bounds writes when uv == 1.0 (which would yield 64)
+            uint cellX = min((uint)(uv.x * 64.0), 63u);
+            uint cellY = min((uint)(uv.y * 64.0), 63u);
             uint cellIdx = cellY * 64 + cellX;
             uint prev;
             InterlockedExchange(CellLocks[cellIdx], 1, prev);

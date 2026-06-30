@@ -198,10 +198,11 @@ public class RopeFluidContainer : MonoBehaviour
             // Keep all particles frozen at the displaced pose (zero velocity)
             rope.FreezeAllParticles();
 
-            // Keep the bucket at the displaced position
+            // Keep the bucket at the displaced position and aligned with the rope
             if (fluidSimulation != null)
             {
                 fluidSimulation.transform.position = displacedBucketPosition;
+                UpdateBucketRotation(displacedBucketPosition);
             }
 
             // Draw the rope even during hold
@@ -236,17 +237,47 @@ public class RopeFluidContainer : MonoBehaviour
         // Draw the rope
         DrawRope();
 
-        // Follow the fluid container (bucket) to the rope's end particle
+        // Follow the fluid container (bucket) to the rope's end particle and align rotation
         if (fluidSimulation != null)
         {
             VerletParticle endBucket = rope.Particles[rope.Particles.Count - 1];
             fluidSimulation.transform.position = endBucket.Position;
+            UpdateBucketRotation(endBucket.Position);
 
             if (applyOverheadCamera && followBucket && Camera.main != null)
             {
                 Camera.main.transform.position = Vector3.Lerp(Camera.main.transform.position, endBucket.Position + cameraOffset, Time.deltaTime * 5f);
                 // Look midway between bucket and canvas
                 Camera.main.transform.LookAt(endBucket.Position + Vector3.down * 7.5f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Aligns the bucket's rotation so that its opening (Up vector) points
+    /// towards the rope, making it swing naturally instead of always facing down.
+    /// </summary>
+    void UpdateBucketRotation(Vector3 bucketPos)
+    {
+        if (rope.Particles.Count >= 2)
+        {
+            VerletParticle prevNode = rope.Particles[rope.Particles.Count - 2];
+            Vector3 ropeDir = (prevNode.Position - bucketPos).normalized;
+
+            if (ropeDir != Vector3.zero)
+            {
+                // Align the bucket's Up axis (Y) with the rope.
+                // We project its current forward vector onto the plane normal to the rope
+                // to prevent the bucket from spinning wildly around its Y axis.
+                Vector3 currentForward = fluidSimulation.transform.forward;
+                Vector3 projectedForward = Vector3.ProjectOnPlane(currentForward, ropeDir).normalized;
+                
+                if (projectedForward == Vector3.zero) 
+                {
+                    projectedForward = Vector3.forward;
+                }
+
+                fluidSimulation.transform.rotation = Quaternion.LookRotation(projectedForward, ropeDir);
             }
         }
     }
