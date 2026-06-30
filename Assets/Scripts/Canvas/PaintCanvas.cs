@@ -28,7 +28,7 @@ public class PaintCanvas : MonoBehaviour
     public Vector2  MassScaleClamp        = new Vector2(0.6f, 2.8f);
 
     [Header("كشف الاصطدام (Collision Detection)")]
-    public float HitThreshold = 0.05f;
+    public float HitThreshold = 0.5f;
 
     [Header("قماش اللوحة والفرشاة (Canvas Grain & Brush)")]
     [Range(5f, 80f)]
@@ -237,6 +237,7 @@ public class PaintCanvas : MonoBehaviour
         PaintCompute.Dispatch(_clearLocksKernel, (64 * 64) / 64, 1, 1);
 
         // --- 1. Detect Hits ---
+        PaintCompute.SetFloat("deltaTime", Time.deltaTime); // Ensure deltaTime is set for prevPos reconstruction
         PaintCompute.SetMatrix("worldToLocal", transform.worldToLocalMatrix);
         PaintCompute.SetFloat("canvasWidth", CanvasWidth);
         PaintCompute.SetFloat("canvasHeight", CanvasHeight);

@@ -58,8 +58,8 @@ public class GPUFluidPaintSceneSetup
         // 2. Create the Canvas
         GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
         quad.name = "PaintCanvas_Surface";
-        // Position it 8 units below the fluid sim so there is a clear gap for dripping (accounting for rope stretch)
-        quad.transform.position = fluidPos + new Vector3(0, -10f, 0); 
+        // Position it lower so there is a clear gap for dripping (accounting for rubber rope stretch and bucket height)
+        quad.transform.position = fluidPos + new Vector3(0, -15f, 0); 
         quad.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         quad.transform.localScale = new Vector3(16f, 16f, 1f); // Make canvas slightly larger for swinging
 
@@ -76,7 +76,7 @@ public class GPUFluidPaintSceneSetup
         canvas.CanvasHeight = 1;
         canvas.TextureRes = 1024;
         canvas.PaintNormalLocal = Vector3.forward; // A Unity Quad's normal is +Z locally
-        canvas.HitThreshold = 1.0f; // Increase threshold slightly just in case
+        canvas.HitThreshold = 0.5f; // Particles now reach the canvas thanks to the collision fix
 
         // Try to find the compute shader automatically
         string[] guids = AssetDatabase.FindAssets("PaintCanvas t:ComputeShader");

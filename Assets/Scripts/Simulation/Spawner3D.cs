@@ -9,7 +9,7 @@ namespace Seb.Fluid.Simulation
 	{
 		[Header("Spawn Mode")]
 		[Tooltip("When enabled, uses Exact Particle Count instead of density.")]
-		public bool useExactCount = false;
+		public bool useExactCount = true;
 
 		[Tooltip("Exact total number of particles to spawn (shared equally across all regions). Only used when Use Exact Count is enabled.")]
 		public int exactParticleCount = 5000;
@@ -27,6 +27,13 @@ namespace Seb.Fluid.Simulation
 		public int debug_num_particles;
 		public float debug_spawn_volume;
 
+
+		void Awake()
+		{
+			// إجبار القيم على أن تكون True و 5000 عند بدء اللعبة لتجاهل ما هو محفوظ في الـ Inspector
+			useExactCount = true;
+			exactParticleCount = 5000;
+		}
 
 		public SpawnData GetSpawnData()
 		{

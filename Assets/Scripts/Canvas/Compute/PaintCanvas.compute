@@ -72,27 +72,37 @@ void DetectHits(uint3 id : SV_DispatchThreadID)
     if (id.x >= numParticles) return;
 
     float3 pos = Positions[id.x];
+    float3 vel = Velocities[id.x];
+    
+    // Calculate previous position based on velocity
+    float3 prevPos = pos - vel * deltaTime;
     
     // Transform to canvas local space
     float4 localPos4 = mul(worldToLocal, float4(pos, 1.0));
-    float3 localPos = localPos4.xyz / localPos4.w; // Perspective divide just in case
+    float3 localPos = localPos4.xyz / localPos4.w;
 
-    // Canvas is on the XY plane in its local space, with normal = Z or up = Y depending on rotation.
-    // PaintCanvas.cs uses: Vector3 n = PaintNormalLocal.normalized;
-    // localPos is already in canvas local space. Let's assume PaintNormalLocal is (0,1,0) by default.
-    // We pass worldToLocal directly from the Canvas.
-    // To make it simple, we use the same dot product logic:
-    // Wait, let's just assume normal is (0,1,0) since it's local.
-    // Let's pass normal and tangent vectors.
-    
+    float4 localPrevPos4 = mul(worldToLocal, float4(prevPos, 1.0));
+    float3 localPrevPos = localPrevPos4.xyz / localPrevPos4.w;
+
     // A Unity Quad lies on the local XY plane, so the distance from the plane is its local Z axis.
     float planeDist = localPos.z;
+    float prevPlaneDist = localPrevPos.z;
     
-    if (abs(planeDist) <= hitThreshold)
+    // Check if the particle crossed the plane this frame, or is resting within the threshold
+    if ((planeDist * prevPlaneDist <= 0.0) || abs(planeDist) <= hitThreshold)
     {
+        // Find exact hit point for accurate UVs
+        float t = 1.0;
+        if (planeDist * prevPlaneDist <= 0.0 && abs(planeDist - prevPlaneDist) > 0.0001)
+        {
+            t = abs(prevPlaneDist) / (abs(prevPlaneDist) + abs(planeDist));
+        }
+        
+        float3 hitLocalPos = lerp(localPrevPos, localPos, t);
+        
         // Check bounds (u = X, v = Y)
-        float u = localPos.x;
-        float v = localPos.y;
+        float u = hitLocalPos.x;
+        float v = hitLocalPos.y;
         
         if (abs(u) <= canvasWidth * 0.5 && abs(v) <= canvasHeight * 0.5)
         {

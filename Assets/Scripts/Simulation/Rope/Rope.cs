@@ -14,7 +14,7 @@ public class Rope
     // القائمة الجديدة لقيود الانثناء
     public List<BendingConstraint> BendingConstraints = new List<BendingConstraint>();
 
-    public Rope(Vector3 startPosition, float ropeLength, int segmentCount, RopeMaterial material, float bendingStiffness = 0.2f)
+    public Rope(Vector3 startPosition, float ropeLength, int segmentCount, RopeMaterial material, float bendingStiffness = 0.2f, float bucketMass = 10f)
     {
         float stiffness = 1.0f;
         float maxStretch = 1.0f;
@@ -34,7 +34,7 @@ public class Rope
         {
             Vector3 position = startPosition + (Vector3.down * segmentLength * i);
             bool pinned = (i == 0);
-            float mass = (i == segmentCount) ? 10f : 1f; 
+            float mass = (i == segmentCount) ? bucketMass : 1f; 
             Particles.Add(new VerletParticle(position, pinned, mass));
         }
 

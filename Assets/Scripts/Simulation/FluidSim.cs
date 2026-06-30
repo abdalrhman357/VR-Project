@@ -54,6 +54,9 @@ namespace Seb.Fluid.Simulation
 		[HideInInspector] public RenderTexture DensityMap;
 		public Vector3 Scale => transform.localScale;
 
+		public int InitialParticleCount { get; private set; }
+		public int ActiveParticleCount { get; private set; }
+
 		// Buffers
 		public ComputeBuffer foamBuffer { get; private set; }
 		public ComputeBuffer foamSortTargetBuffer { get; private set; }
@@ -63,6 +66,7 @@ namespace Seb.Fluid.Simulation
 		public ComputeBuffer densityBuffer { get; private set; }
 		public ComputeBuffer predictedPositionsBuffer;
 		public ComputeBuffer debugBuffer { get; private set; }
+		public ComputeBuffer activeCountBuffer { get; private set; }
 
 		ComputeBuffer sortTarget_positionBuffer;
 		ComputeBuffer sortTarget_velocityBuffer;
@@ -80,6 +84,7 @@ namespace Seb.Fluid.Simulation
 		const int renderKernel                = 8;
 		const int foamUpdateKernel            = 9;
 		const int foamReorderCopyBackKernel   = 10;
+		const int clearCountersKernel         = 11;
 
 		SpatialHash spatialHash;
 
@@ -103,6 +108,8 @@ namespace Seb.Fluid.Simulation
 		{
 			spawnData = spawner.GetSpawnData();
 			int numParticles = spawnData.points.Length;
+			InitialParticleCount = numParticles;
+			ActiveParticleCount = numParticles;
 
 			spatialHash = new SpatialHash(numParticles);
 
@@ -117,6 +124,7 @@ namespace Seb.Fluid.Simulation
 			sortTarget_positionBuffer             = CreateStructuredBuffer<float3>(numParticles);
 			sortTarget_predictedPositionsBuffer   = CreateStructuredBuffer<float3>(numParticles);
 			sortTarget_velocityBuffer             = CreateStructuredBuffer<float3>(numParticles);
+			activeCountBuffer                     = CreateStructuredBuffer<uint>(1);
 
 			bufferNameLookup = new Dictionary<ComputeBuffer, string>
 			{
@@ -133,7 +141,8 @@ namespace Seb.Fluid.Simulation
 				{ foamCountBuffer,                          "WhiteParticleCounters" },
 				{ foamBuffer,                               "WhiteParticles" },
 				{ foamSortTargetBuffer,                     "WhiteParticlesCompacted" },
-				{ debugBuffer,                              "Debug" }
+				{ debugBuffer,                              "Debug" },
+				{ activeCountBuffer,                        "ActiveParticleCount" }
 			};
 
 			SetInitialBufferData(spawnData);
@@ -166,7 +175,10 @@ namespace Seb.Fluid.Simulation
 				  spatialHash.SpatialKeys, spatialHash.SpatialOffsets });
 
 			SetBuffers(compute, updatePositionsKernel, bufferNameLookup, new ComputeBuffer[]
-				{ positionBuffer, velocityBuffer });
+				{ positionBuffer, velocityBuffer, activeCountBuffer });
+				
+			SetBuffers(compute, clearCountersKernel, bufferNameLookup, new ComputeBuffer[]
+				{ activeCountBuffer });
 
 			SetBuffers(compute, renderKernel, bufferNameLookup, new ComputeBuffer[]
 				{ predictedPositionsBuffer, densityBuffer, spatialHash.SpatialKeys, spatialHash.SpatialOffsets });
@@ -245,7 +257,21 @@ namespace Seb.Fluid.Simulation
 			Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
 			Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
 			if (viscosityStrength != 0) Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
+
+			// Clear counter before positions update
+			Dispatch(compute, 1, kernelIndex: clearCountersKernel);
+			
 			Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
+
+			// Asynchronously read back the active particle count
+			UnityEngine.Rendering.AsyncGPUReadback.Request(activeCountBuffer, (req) =>
+			{
+				if (!req.hasError && req.done)
+				{
+					var data = req.GetData<uint>();
+					ActiveParticleCount = (int)data[0];
+				}
+			});
 		}
 
 		void UpdateSmoothingConstants()

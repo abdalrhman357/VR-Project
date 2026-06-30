@@ -1,4 +1,4 @@
-﻿#pragma kernel ExternalForces
+#pragma kernel ExternalForces
 #pragma kernel UpdateSpatialHash
 #pragma kernel Reorder
 #pragma kernel ReorderCopyBack;
@@ -9,6 +9,7 @@
 #pragma kernel UpdateDensityTexture
 #pragma kernel UpdateWhiteParticles
 #pragma kernel WhiteParticlePrepareNextFrame;
+#pragma kernel ClearCounters
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -29,6 +30,7 @@ RWStructuredBuffer<uint> SpatialOffsets;
 StructuredBuffer<uint> SortedIndices;
 
 RWStructuredBuffer<float3> Debug;
+RWStructuredBuffer<uint> ActiveParticleCount;
 
 // Settings
 const uint numParticles;
@@ -113,46 +115,54 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     float radius     = min(boundsSize.x, boundsSize.z) * 0.5;
     float halfHeight = boundsSize.y * 0.5;
 
-    // --- Curved wall (XZ) ---
-    float2 xzOffset  = float2(localPos.x, localPos.z);
-    float  radialDst = length(xzOffset);
+    // Particles that have already escaped below the cylinder (fell through
+    // the hole) must be completely free – no wall or cap constraints.
+    // A small margin prevents particles right at the cap from escaping prematurely.
+    bool escapedBelow = localPos.y < -(halfHeight + 0.05);
 
-    if (radialDst >= radius)
+    if (!escapedBelow)
     {
-        float2 n2D = xzOffset / radialDst;
-        localPos.x = n2D.x * radius;
-        localPos.z = n2D.y * radius;
+        // --- Curved wall (XZ) ---
+        float2 xzOffset  = float2(localPos.x, localPos.z);
+        float  radialDst = length(xzOffset);
 
-        float2 velXZ     = float2(vel.x, vel.z);
-        float  velNormal = dot(velXZ, n2D);
-        if (velNormal > 0)
+        if (radialDst >= radius)
         {
-            velXZ -= 2.0 * velNormal * n2D;
-            velXZ *= collisionDamping;
-            vel.x  = velXZ.x;
-            vel.z  = velXZ.y;
-        }
-    }
+            float2 n2D = xzOffset / radialDst;
+            localPos.x = n2D.x * radius;
+            localPos.z = n2D.y * radius;
 
-    // --- Bottom cap (with optional hole) ---
-    // Only test particles still inside the cylinder radially; ones that escaped
-    // through the hole and drifted outside must never be pushed back.
-    if (localPos.y <= -halfHeight && radialDst < radius)
-    {
-        float2 xzRelToHole = float2(localPos.x, localPos.z) - holeOffset;
-        bool   inHole      = (holeRadius > 0) && (length(xzRelToHole) <= holeRadius);
-        if (!inHole)
+            float2 velXZ     = float2(vel.x, vel.z);
+            float  velNormal = dot(velXZ, n2D);
+            if (velNormal > 0)
+            {
+                velXZ -= 2.0 * velNormal * n2D;
+                velXZ *= collisionDamping;
+                vel.x  = velXZ.x;
+                vel.z  = velXZ.y;
+            }
+        }
+
+        // --- Bottom cap (with optional hole) ---
+        // We removed the old 'radialDst' check because particles clamped by the wall 
+        // still need to be caught by the floor. This seals the bucket completely.
+        if (localPos.y <= -halfHeight)
         {
-            localPos.y = -halfHeight;
-            vel.y      = abs(vel.y) * collisionDamping;
+            float2 xzRelToHole = float2(localPos.x, localPos.z) - holeOffset;
+            bool   inHole      = (holeRadius > 0) && (length(xzRelToHole) <= holeRadius);
+            if (!inHole)
+            {
+                localPos.y = -halfHeight;
+                vel.y      = abs(vel.y) * collisionDamping;
+            }
         }
-    }
 
-    // --- Top cap (always solid) ---
-    if (localPos.y >= halfHeight)
-    {
-        localPos.y = halfHeight;
-        vel.y      = -abs(vel.y) * collisionDamping;
+        // --- Top cap (always solid) ---
+        if (localPos.y >= halfHeight)
+        {
+            localPos.y = halfHeight;
+            vel.y      = -abs(vel.y) * collisionDamping;
+        }
     }
 
     pos = localPos + centre3;
@@ -500,6 +510,19 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 
     Positions[id.x]  = pos;
     Velocities[id.x] = vel;
+    
+    // Count active particles that haven't fallen through the hole
+    float3 localPos = pos - centre3;
+    if (localPos.y > -(boundsSize.y * 0.5 + 0.05))
+    {
+        InterlockedAdd(ActiveParticleCount[0], 1);
+    }
+}
+
+[numthreads(1, 1, 1)]
+void ClearCounters(uint3 id : SV_DispatchThreadID)
+{
+    ActiveParticleCount[0] = 0;
 }
 
 [numthreads(8, 8, 8)]
