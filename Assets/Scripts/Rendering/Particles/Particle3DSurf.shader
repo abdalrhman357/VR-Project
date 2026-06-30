@@ -5,6 +5,7 @@ Shader "Fluid/Particle3DSurf"
         _MainTex("Albedo (RGB)", 2D) = "white" {}
         _Glossiness("Smoothness", Range(0,1)) = 0.5
         _Metallic("Metallic", Range(0,1)) = 0.0
+        _ParticleColour("Particle Colour", Color) = (0, 0.1, 0.5, 1)
     }
     SubShader
     {
@@ -34,12 +35,13 @@ Shader "Fluid/Particle3DSurf"
         #endif
 
         float scale;
+        float4 _ParticleColour;
 
         void vert(inout appdata_full v, out Input o)
         {
                 UNITY_INITIALIZE_OUTPUT(Input, o);
             o.uv_MainTex = v.texcoord.xy;
-            o.colour = float4(0.0, 0.1, 0.5, 1); // dark blue
+            o.colour = _ParticleColour;
         }
 
         void setup()

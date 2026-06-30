@@ -16,6 +16,7 @@ namespace Seb.Fluid.Rendering
 
 		[Header("Settings")] public DisplayMode mode;
 		public float scale;
+		public Color particleColour = new Color(0.0f, 0.1f, 0.5f);   // fluid colour
 		public Gradient colourMap;
 		public int gradientResolution;
 		public float velocityDisplayMax;
@@ -31,6 +32,8 @@ namespace Seb.Fluid.Rendering
 		Texture2D gradientTexture;
 		DisplayMode modeOld;
 		bool needsUpdate;
+
+		Color _colourOld;
 
 		void LateUpdate()
 		{
@@ -75,6 +78,13 @@ namespace Seb.Fluid.Rendering
 					needsUpdate = false;
 					TextureFromGradient(ref gradientTexture, gradientResolution, colourMap);
 					mat.SetTexture("ColourMap", gradientTexture);
+				}
+
+				// Push colour to shader whenever it changes
+				if (particleColour != _colourOld)
+				{
+					_colourOld = particleColour;
+					mat.SetColor("_ParticleColour", particleColour);
 				}
 
 				mat.SetFloat("scale", scale * 0.01f);

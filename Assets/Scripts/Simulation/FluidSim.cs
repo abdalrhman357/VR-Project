@@ -50,6 +50,7 @@ namespace Seb.Fluid.Simulation
 
 		[Header("References")] public ComputeShader compute;
 		public Spawner3D spawner;
+		public Rendering.BucketRenderer bucketRenderer;
 
 		[HideInInspector] public RenderTexture DensityMap;
 		public Vector3 Scale => transform.localScale;
@@ -91,6 +92,7 @@ namespace Seb.Fluid.Simulation
 		bool inSlowMode;
 		Spawner3D.SpawnData spawnData;
 		Dictionary<ComputeBuffer, string> bufferNameLookup;
+		Vector3 prevCentre3;
 
 		void Start()
 		{
@@ -182,6 +184,20 @@ namespace Seb.Fluid.Simulation
 			compute.SetInt("MaxWhiteParticleCount", maxFoamParticleCount);
 
 			UpdateSmoothingConstants();
+			
+			// Initialize prevCentre3 based on the initial transform
+			if (bucketRenderer != null)
+			{
+				float simHalfH = Scale.y * 0.5f;
+				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
+				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
+				float centreY      = (bucketTop + bucketBottom) * 0.5f;
+				prevCentre3 = transform.position + Vector3.up * centreY;
+			}
+			else
+			{
+				prevCentre3 = transform.position;
+			}
 
 			if (renderToTex3D) RunSimulationFrame(0);
 
@@ -264,6 +280,23 @@ namespace Seb.Fluid.Simulation
 			Vector3 simBoundsSize   = transform.localScale;
 			Vector3 simBoundsCentre = transform.position;
 
+			// When a BucketRenderer is assigned, collision bounds = bucket inner wall.
+			// The bucket inner wall = simR + radiusPadding, so we pass that directly
+			// as boundsSize. This way changing Scale changes both equally.
+			if (bucketRenderer != null)
+			{
+				float simHalfH = Scale.y * 0.5f;
+				float innerR   = Scale.x * 0.5f + bucketRenderer.radiusPadding;
+
+				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
+				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
+				float bucketHeight =  bucketTop - bucketBottom;
+				float centreY      = (bucketTop + bucketBottom) * 0.5f;
+
+				simBoundsSize   = new Vector3(innerR * 2f, bucketHeight, innerR * 2f);
+				simBoundsCentre = transform.position + Vector3.up * centreY;
+			}
+
 			compute.SetFloat("deltaTime",              stepDeltaTime);
 			compute.SetFloat("whiteParticleDeltaTime", frameDeltaTime);
 			compute.SetFloat("simTime",                simTimer);
@@ -275,7 +308,10 @@ namespace Seb.Fluid.Simulation
 			compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
 			compute.SetFloat("viscosityStrength",      viscosityStrength);
 			compute.SetVector("boundsSize", simBoundsSize);
+			
+			compute.SetVector("prevCentre3", prevCentre3);
 			compute.SetVector("centre3",    simBoundsCentre);
+			prevCentre3 = simBoundsCentre;
 
 			// Bottom hole
 			compute.SetFloat("holeRadius",  holeRadius);

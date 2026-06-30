@@ -1,4 +1,4 @@
-﻿#pragma kernel ExternalForces
+#pragma kernel ExternalForces
 #pragma kernel UpdateSpatialHash
 #pragma kernel Reorder
 #pragma kernel ReorderCopyBack;
@@ -100,12 +100,13 @@ float Remap01(float val, float minVal, float maxVal)
 
 // Cylinder centre in world space (updated every frame from CPU)
 const float3 centre3;
+const float3 prevCentre3;
 
 // Bottom hole settings
 const float  holeRadius;
 const float2 holeOffset;
 
-void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDamping)
+void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDamping, float dt)
 {
     // Work in cylinder-local space (relative to the cylinder centre)
     float3 localPos = pos - centre3;
@@ -132,19 +133,25 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
             vel.x  = velXZ.x;
             vel.z  = velXZ.y;
         }
+        radialDst = radius;
     }
 
     // --- Bottom cap (with optional hole) ---
     // Only test particles still inside the cylinder radially; ones that escaped
     // through the hole and drifted outside must never be pushed back.
-    if (localPos.y <= -halfHeight && radialDst < radius)
+    if (localPos.y <= -halfHeight && radialDst <= radius)
     {
         float2 xzRelToHole = float2(localPos.x, localPos.z) - holeOffset;
         bool   inHole      = (holeRadius > 0) && (length(xzRelToHole) <= holeRadius);
         if (!inHole)
         {
-            localPos.y = -halfHeight;
-            vel.y      = abs(vel.y) * collisionDamping;
+            float3 prevPos = pos - vel * dt;
+            float prevLocalY = prevPos.y - prevCentre3.y;
+            if (prevLocalY > -halfHeight - 0.1)
+            {
+                localPos.y = -halfHeight;
+                vel.y      = abs(vel.y) * collisionDamping;
+            }
         }
     }
 
@@ -445,6 +452,7 @@ void CalculateViscosity(uint3 id : SV_DispatchThreadID)
     float sqrRadius = smoothingRadius * smoothingRadius;
 
     float3 viscosityForce = 0;
+    float weightSum = 0;
     float3 velocity = Velocities[id.x];
 
     // Neighbour search
@@ -480,10 +488,20 @@ void CalculateViscosity(uint3 id : SV_DispatchThreadID)
             // Calculate viscosity
             float dst = sqrt(sqrDstToNeighbour);
             float3 neighbourVelocity = Velocities[neighbourIndex];
-            viscosityForce += (neighbourVelocity - velocity) * SmoothingKernelPoly6(dst, smoothingRadius);
+            float weight = SmoothingKernelPoly6(dst, smoothingRadius);
+            viscosityForce += (neighbourVelocity - velocity) * weight;
+            weightSum += weight;
         }
     }
-    Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
+    
+    if (weightSum > 0.000001)
+    {
+        // Normalize the viscosity force by the weight sum to prevent explosions,
+        // and limit the maximum applied force so it never overshoots the neighbour average.
+        float3 averageVelocityDiff = viscosityForce / weightSum;
+        float blendFactor = saturate(viscosityStrength * deltaTime);
+        Velocities[id.x] += averageVelocityDiff * blendFactor;
+    }
 }
 
 [numthreads(ThreadGroupSize, 1, 1)]
@@ -496,7 +514,7 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
     float3 pos = Positions[id.x];
     pos += vel * deltaTime;
 
-    ResolveCollisions(pos, vel, collisionDamping);
+    ResolveCollisions(pos, vel, collisionDamping, deltaTime);
 
     Positions[id.x]  = pos;
     Velocities[id.x] = vel;
@@ -602,7 +620,7 @@ void UpdateWhiteParticles(uint3 id : SV_DispatchThreadID)
     particle.position += particle.velocity * deltaTime;
 
     const float collisionDampening = 0.1;
-    ResolveCollisions(particle.position, particle.velocity, collisionDampening);
+    ResolveCollisions(particle.position, particle.velocity, collisionDampening, deltaTime);
     WhiteParticles[id.x] = particle;
 
     // Compact the surviving particles into temporary buffer
