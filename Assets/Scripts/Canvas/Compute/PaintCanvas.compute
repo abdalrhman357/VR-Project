@@ -11,7 +11,7 @@ struct HitData {
     float2 strokeDir; // 12-19
     float massScale;  // 20-23
     float viscosity;  // 24-27
-    float _pad;       // 28-31
+    float planeSpeed; // 28-31
     float4 color;     // 32-47
 };
 
@@ -116,7 +116,8 @@ void DetectHits(uint3 id : SV_DispatchThreadID)
             float4 localVel4 = mul(worldToLocal, float4(vel, 0.0));
             float3 localVel = localVel4.xyz;
             float2 velInPlane = float2(localVel.x, localVel.y);
-            float2 strokeDir = length(velInPlane) > 0.001 ? normalize(velInPlane) : float2(0, 0);
+            float planeSpeed = length(velInPlane);
+            float2 strokeDir = planeSpeed > 0.001 ? (velInPlane / planeSpeed) : float2(0, 0);
 
             float refMass = max(referenceMass, 0.00001);
             float massSc = clamp(sqrt(paintMass / refMass), massScaleClamp.x, massScaleClamp.y);
@@ -127,7 +128,7 @@ void DetectHits(uint3 id : SV_DispatchThreadID)
             hit.strokeDir = strokeDir;
             hit.massScale = massSc;
             hit.viscosity = paintViscosity;
-            hit._pad = 0.0; // Initialize padding to fix metal compilation error
+            hit.planeSpeed = planeSpeed;
             hit.color = paintColor;
 
             // Use InterlockedExchange on a cell-lock buffer to prevent race conditions and overdraw
@@ -207,13 +208,15 @@ float valueNoise(float2 p) {
     return lerp(lerp(n00, n10, f.x), lerp(n01, n11, f.x), f.y);
 }
 
-void DrawSpot_GPU(uint width, uint height, float2 centerUV, int r, float4 tintedColor, float aspect, float strength, float2 strokeDir, uint seed, bool addNoise)
+void DrawSpot_GPU(uint width, uint height, float2 centerUV, int r, float4 tintedColor, float strokeLength, float strength, float2 strokeDir, uint seed, bool addNoise)
 {
     float noiseOX = hash21(float2(seed, seed * 2.0)) * 1000.0;
     float noiseOY = hash21(float2(seed * 3.0, seed * 4.0)) * 1000.0;
 
     int2 centerPx = int2(centerUV.x * width, centerUV.y * height);
-    int scanR = round((float)r * (max(aspect, 1.0) + 1.0) * 1.1);
+    
+    // expand scan radius to encompass the full capsule length
+    int scanR = round((float)r * 1.2 + strokeLength);
 
     bool hasDir = dot(strokeDir, strokeDir) > 0.001;
     float cosA = hasDir ? strokeDir.x : 1.0;
@@ -228,10 +231,13 @@ void DrawSpot_GPU(uint width, uint height, float2 centerUV, int r, float4 tinted
             float dx = px - centerPx.x;
             float dy = py - centerPx.y;
             
+            // Rotate to stroke local space
             float lx = dx * cosA + dy * sinA;
             float ly = -dx * sinA + dy * cosA;
             
-            float normDist = sqrt((lx / aspect) * (lx / aspect) + ly * ly);
+            // Capsule distance field: distance to the line segment [-strokeLength, strokeLength]
+            float dlx = max(0.0, abs(lx) - strokeLength);
+            float normDist = sqrt(dlx * dlx + ly * ly);
             
             float noiseVal = addNoise ? valueNoise(float2(px * 0.12 + noiseOX, py * 0.12 + noiseOY)) * (float)r * 0.45 : 0.0;
             float effRadius = (float)r + noiseVal;
@@ -289,18 +295,21 @@ void ApplyPaint(uint3 id : SV_DispatchThreadID)
     // Hard cap the radius to prevent excessive nested loop iterations causing TDR/performance issues
     int r = clamp(max(2, round(baseRadius * width * brushSizeScale)), 2, 40);
     
-    // Compute Aspect
-    float dynamicMaxStrokeAspect = clamp(1.0 + hit.speed * 0.5, 1.0, 4.0);
-    float aspect = lerp(1.0, dynamicMaxStrokeAspect, speedF * 0.7);
-
+    // Compute stroke length to connect drops into a continuous line
+    // planeSpeed (m/s) * 1/60s = meters per frame. Convert to pixels.
+    // Multiplying by a connectivity factor (e.g. 1.5) ensures drops overlap perfectly.
+    float distancePerFrameUV = (hit.planeSpeed * 0.0166) / canvasWidth;
+    float distancePerFramePixels = distancePerFrameUV * width;
+    float strokeLength = min(distancePerFramePixels * 1.5, 120.0); // Hard cap to prevent GPU hangs
+    
     // Tint
     float tintT = speedF * 0.4;
     float4 tintedColor = lerp(hit.color, lerp(hit.color, float4(1,1,1,1), 0.25), tintT);
 
     float strength = clamp(hit.massScale, 0.25, 3.0);
 
-    // Draw main spot (addNoise = true)
-    DrawSpot_GPU(width, height, hit.uv, r, tintedColor, aspect, strength, hit.strokeDir, id.x, true);
+    // Draw main stroke (addNoise = true)
+    DrawSpot_GPU(width, height, hit.uv, r, tintedColor, strokeLength, strength, hit.strokeDir, id.x, true);
 
     // Splatters
     if (hit.speed > 1.5 || hit.viscosity < 2.0)
@@ -326,8 +335,8 @@ void ApplyPaint(uint3 id : SV_DispatchThreadID)
             int minBrushR = max(4, round((float)width * 0.008 * 0.3));
             int dropR = max(minBrushR, round((float)r * (0.06 + randomHash(seedState) * 0.16)));
             
-            // Splatters don't use noise (addNoise = false)
-            DrawSpot_GPU(width, height, dropUV, dropR, tintedColor, 1.0, strength * 0.75, float2(0,0), seedState, false);
+            // Splatters are just drops, so strokeLength = 0 (perfect circle)
+            DrawSpot_GPU(width, height, dropUV, dropR, tintedColor, 0.0, strength * 0.75, float2(0,0), seedState, false);
         }
     }
 }

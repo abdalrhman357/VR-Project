@@ -193,6 +193,36 @@ public class Rope
         }
     }
 
+    /// <summary>
+    /// Apply a velocity (in m/s) to all particles as a linear gradient:
+    /// 0 at the anchor (particle 0) → full at the bucket (last particle).
+    ///
+    /// This is the physically correct velocity profile for a rigid pendulum
+    /// rotating with angular velocity ω: each point's linear velocity is
+    /// v = ω × r, which increases linearly with distance from the pivot.
+    ///
+    /// By moving ALL particles coherently, constraint solving doesn't fight
+    /// the motion, so the bucket accelerates smoothly without jerking the fluid.
+    /// </summary>
+    /// <param name="velocityMps">Desired velocity in metres per second at the bucket.</param>
+    public void ApplyVelocityGradient(Vector3 velocityMps)
+    {
+        int lastIndex = Particles.Count - 1;
+
+        for (int i = 1; i <= lastIndex; i++) // Skip anchor (i=0, pinned)
+        {
+            // Linear interpolation: t = 0 at anchor, t = 1 at bucket
+            float t = (float)i / lastIndex;
+
+            // Convert m/s to Verlet displacement:
+            // In Verlet, velocity ≈ (Position - PreviousPosition) / dt
+            // So: PreviousPosition = Position - velocity * dt
+            Vector3 velDisplacement = velocityMps * FixedSubStep * t;
+
+            Particles[i].PreviousPosition = Particles[i].Position - velDisplacement;
+        }
+    }
+
     // Backward-compatible overload for RopeTest or other callers that don't pass an anchor.
     public void Simulate(float deltaTime, Vector3 gravity)
     {

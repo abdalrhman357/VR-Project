@@ -36,11 +36,18 @@ public class RopeFluidContainer : MonoBehaviour
     public Vector3 cameraOffset = new Vector3(15f, -2f, -15f);
 
     [Header("Pendulum Swing (applied at simulation start)")]
-    [Tooltip("Pull the bucket to the side before releasing it (e.g. X axis).")]
-    public Vector3 pullOffset = new Vector3(1f, 0f,0f); 
+    [Tooltip("Pull the bucket to the side before releasing it.\n"
+           + "The direction determines the swing plane.\n"
+           + "The magnitude determines the amplitude.")]
+    public Vector3 pullOffset = new Vector3(3f, 0f, 0f); 
 
-    [Tooltip("Push the bucket sideways as it's released to create a circular/spiral motion (e.g. Z axis). Set to zero for one-directional swing.")]
-    public Vector3 pushTangential = Vector3.zero;
+    [Tooltip("Tangential speed (m/s) applied at release, perpendicular to pullOffset.\n"
+           + "Creates elliptical or spiral motion.\n\n"
+           + "0 = straight-line swing (no spiral)\n"
+           + "√(g/L) × displacement ≈ perfect circle\n"
+           + "  (with L=10, g≈10: speed ≈ displacement)\n\n"
+           + "Example: pullOffset=(3,0,0) → tangentialSpeed≈3 for a circle.")]
+    public float tangentialSpeed = 3f;
 
     [Header("Hold & Release")]
     [Tooltip("How long (seconds) to hold the rope at the displaced position before releasing. " +
@@ -245,21 +252,48 @@ public class RopeFluidContainer : MonoBehaviour
     }
 
     /// <summary>
-    /// Release the rope from the held position. Applies the tangential push
-    /// (if any) to create circular/spiral motion, then lets physics take over.
-    /// Called automatically after holdDuration, but can also be called manually.
+    /// Release the rope from the held position. Computes the tangential velocity
+    /// direction automatically (perpendicular to pullOffset in the horizontal plane)
+    /// and distributes it across ALL particles as a linear gradient.
+    ///
+    /// Physics: For a conical pendulum with rope length L and horizontal
+    /// displacement r, the tangential speed for a perfect circle is:
+    ///   v = r × √(g / L)    (for small angles, approximately v ≈ r when L≈10)
+    ///
+    /// By applying velocity to ALL particles (not just the bucket), the rope
+    /// moves as a rigid unit, preventing the violent constraint corrections
+    /// that would jerk the bucket and scatter the fluid.
     /// </summary>
     void Release()
     {
         isHeld = false;
 
-        // Apply tangential push for circular/spiral motion (optional).
-        // In Verlet: Velocity = Position - PreviousPosition
-        // So: PreviousPosition = Position - Velocity
-        if (pushTangential.sqrMagnitude > 0f)
+        if (Mathf.Abs(tangentialSpeed) > 0.001f)
         {
-            VerletParticle bucket = rope.Particles[rope.Particles.Count - 1];
-            bucket.PreviousPosition = bucket.Position - pushTangential;
+            // Compute the tangential direction: perpendicular to pullOffset
+            // in the horizontal (XZ) plane. This is the physically correct
+            // direction for creating circular/spiral motion.
+            //
+            // Cross(Up, pullHorizontal) gives a vector perpendicular to both,
+            // which lies in the horizontal plane at 90° to the displacement.
+            Vector3 pullHorizontal = new Vector3(pullOffset.x, 0f, pullOffset.z);
+
+            Vector3 tangentialDir;
+            if (pullHorizontal.sqrMagnitude > 0.0001f)
+            {
+                tangentialDir = Vector3.Cross(Vector3.up, pullHorizontal).normalized;
+            }
+            else
+            {
+                // Fallback: if pullOffset is purely vertical, default to Z axis
+                tangentialDir = Vector3.forward;
+            }
+
+            Vector3 tangentialVelocity = tangentialDir * tangentialSpeed;
+
+            // Apply velocity gradient to ALL particles (0 at anchor → full at bucket).
+            // This mimics rigid-body rotation and prevents fluid scatter.
+            rope.ApplyVelocityGradient(tangentialVelocity);
         }
     }
 
