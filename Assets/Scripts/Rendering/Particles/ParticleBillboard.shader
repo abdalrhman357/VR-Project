@@ -1,0 +1,59 @@
+Shader "Fluid/ParticleBillboard" {
+	Properties {
+		_ParticleColour ("Particle Colour", Color) = (0, 0.1, 0.5, 1)
+	}
+	SubShader {
+
+		Tags {"Queue"="Geometry" }
+
+		Pass {
+
+			CGPROGRAM
+
+			#pragma vertex vert
+			#pragma fragment frag
+			#pragma target 4.5
+
+			#include "UnityCG.cginc"
+			
+			StructuredBuffer<float3> Positions;
+
+			float scale;
+			float4x4 localToWorld;
+			float4 _ParticleColour;
+
+			struct v2f
+			{
+				float4 pos : SV_POSITION;
+				float2 uv : TEXCOORD0;
+				float3 colour : TEXCOORD1;
+				float3 normal : NORMAL;
+			};
+
+			v2f vert (appdata_full v, uint instanceID : SV_InstanceID)
+			{
+				v2f o;
+				o.uv = v.texcoord;
+				o.normal = v.normal;
+				
+				float3 centreWorld = Positions[instanceID];
+				float3 objectVertPos = v.vertex * scale * 2;
+				float4 viewPos = mul(UNITY_MATRIX_V, float4(centreWorld, 1)) + float4(objectVertPos, 0);
+				o.pos = mul(UNITY_MATRIX_P, viewPos);
+
+				o.colour = _ParticleColour.rgb;
+
+				return o;
+			}
+
+			float4 frag (v2f i) : SV_Target
+			{
+				float shading = saturate(dot(_WorldSpaceLightPos0.xyz, i.normal));
+				shading = (shading + 0.6) / 1.4;
+				return float4(i.colour, 1);
+			}
+
+			ENDCG
+		}
+	}
+}
