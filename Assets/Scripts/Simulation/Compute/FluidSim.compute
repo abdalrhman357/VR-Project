@@ -109,42 +109,60 @@ const float2 holeOffset;
 
 void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDamping, float dt)
 {
-    // Work in cylinder-local space (relative to the cylinder centre)
-    float3 localPos = pos - centre3;
+    // ── تحويل الموضع إلى الفضاء المحلي للدلو (دوران فقط، بدون scale) ──
+    // نستخرج مصفوفة الدوران فقط من localToWorld (الأعمدة الثلاثة الأولى مُعيَّرة)
+    float3 right   = normalize(float3(localToWorld[0][0], localToWorld[1][0], localToWorld[2][0]));
+    float3 up      = normalize(float3(localToWorld[0][1], localToWorld[1][1], localToWorld[2][1]));
+    float3 forward = normalize(float3(localToWorld[0][2], localToWorld[1][2], localToWorld[2][2]));
 
-    // Calculate previous local Y to determine if particle was already outside the bottom
-    float3 prevPos = pos - vel * dt;
-    float prevLocalY = prevPos.y - prevCentre3.y;
+    // الموضع النسبي من مركز الدلو (centre3)
+    float3 offset = pos - centre3;
+
+    // تحويل بالدوران فقط: نسقط offset على محاور الدلو المحلية
+    float3 localPos = float3(dot(offset, right), dot(offset, up), dot(offset, forward));
+
+    // نفس التحويل للموضع السابق
+    float3 prevOffset  = (pos - vel * dt) - prevCentre3;
+    float  prevLocalY  = dot(prevOffset, up);
 
     float radius     = min(boundsSize.x, boundsSize.z) * 0.5;
     float halfHeight = boundsSize.y * 0.5;
+
+    // سرعة الدلو في الفضاء المحلي (دوران فقط)
+    float3 localBucketVel = float3(
+        dot(bucketVelocity, right),
+        dot(bucketVelocity, up),
+        dot(bucketVelocity, forward));
+
+    // السرعة في الفضاء المحلي
+    float3 localVel = float3(
+        dot(vel, right),
+        dot(vel, up),
+        dot(vel, forward));
 
     // --- Curved wall (XZ) ---
     float2 xzOffset  = float2(localPos.x, localPos.z);
     float  radialDst = length(xzOffset);
 
-    // Only apply side wall collision if the particle hasn't already escaped the bottom of the bucket
     if (radialDst >= radius && prevLocalY > -halfHeight - 0.1)
     {
         float2 n2D = xzOffset / radialDst;
         localPos.x = n2D.x * radius;
         localPos.z = n2D.y * radius;
 
-        float2 relVelXZ  = float2(vel.x - bucketVelocity.x, vel.z - bucketVelocity.z);
+        float2 relVelXZ  = float2(localVel.x - localBucketVel.x, localVel.z - localBucketVel.z);
         float  velNormal = dot(relVelXZ, n2D);
         if (velNormal > 0)
         {
             relVelXZ -= 2.0 * velNormal * n2D;
             relVelXZ *= collisionDamping;
-            vel.x  = relVelXZ.x + bucketVelocity.x;
-            vel.z  = relVelXZ.y + bucketVelocity.z;
+            localVel.x = relVelXZ.x + localBucketVel.x;
+            localVel.z = relVelXZ.y + localBucketVel.z;
         }
         radialDst = radius;
     }
 
-    // --- Bottom cap (with optional hole) ---
-    // Only test particles still inside the cylinder radially; ones that escaped
-    // through the hole and drifted outside must never be pushed back.
+    // --- Bottom cap ---
     if (localPos.y <= -halfHeight && radialDst <= radius)
     {
         float2 xzRelToHole = float2(localPos.x, localPos.z) - holeOffset;
@@ -154,27 +172,30 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
             if (prevLocalY > -halfHeight - 0.1)
             {
                 localPos.y = -halfHeight;
-                float relVelY = vel.y - bucketVelocity.y;
+                float relVelY = localVel.y - localBucketVel.y;
                 if (relVelY < 0)
                 {
-                    vel.y = (-relVelY * collisionDamping) + bucketVelocity.y;
+                    localVel.y = (-relVelY * collisionDamping) + localBucketVel.y;
                 }
             }
         }
     }
 
-    // --- Top cap (always solid) ---
+    // --- Top cap ---
     if (localPos.y >= halfHeight)
     {
         localPos.y = halfHeight;
-        float relVelY = vel.y - bucketVelocity.y;
+        float relVelY = localVel.y - localBucketVel.y;
         if (relVelY > 0)
         {
-            vel.y = (-relVelY * collisionDamping) + bucketVelocity.y;
+            localVel.y = (-relVelY * collisionDamping) + localBucketVel.y;
         }
     }
 
-    pos = localPos + centre3;
+    // ── تحويل النتيجة للفضاء العالمي (دوران عكسي) ──────────────────
+    // نعكس التحويل: نضرب المحاور المحلية في النتيجة
+    pos = centre3 + right * localPos.x + up * localPos.y + forward * localPos.z;
+    vel = right * localVel.x + up * localVel.y + forward * localVel.z;
 }
 
 [numthreads(ThreadGroupSize, 1, 1)]

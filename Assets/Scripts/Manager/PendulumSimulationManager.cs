@@ -2,247 +2,260 @@ using UnityEngine;
 using Seb.Fluid.Simulation;
 
 /// <summary>
-/// المدير المركزي: يربط الحبل بالدلو.
-/// 
-/// معالجة الاهتزاز — الحل النهائي:
-/// ══════════════════════════════════
-/// الاهتزاز عند السكون ناتج عن أمرين:
-/// 1. الصراع المستمر بين الجاذبية ومحلّل القيود في Verlet Integration
-/// 2. أي تغيير طفيف في FluidSim.transform.position يُعيد حساب كل جزيئات السائل
+/// مدير محاكاة البندول — حبل + دلو + سائل.
 ///
-/// الحل من شقّين:
-/// أ) محلّل Gauss-Seidel المتناوب (في Rope.cs) — يحسّن التقارب عند الدلو الثقيل
-/// ب) عتبة تحديث الموقع (Position Update Threshold) — لا نحدّث موقع FluidSim
-///    إلا إذا تغيّر بأكثر من الحد الأدنى. هذا يمنع الاهتزاز الدقيق من الوصول
-///    لنظام السائل دون أي تأثير على الحركة الفعلية.
+/// منطق الأرجوحة الصحيح:
+/// ══════════════════════
+/// الأرجوحة ليست "دفعة على آخر جزيئة" — بل هي حبل كامل مُمال بزاوية ابتدائية.
+/// الطريقة الصحيحة: نضع كل جزيئات الحبل في موضع مائل (كأن شخصاً أمسك الأرجوحة
+/// وسحبها للجانب ثم أفلتها). الجاذبية تُسرّع الحركة نحو المنتصف تلقائياً.
+///
+/// مشاكل النظام السابق:
+/// ════════════════════
+/// 1. initialPush على جزيئة واحدة فقط → الجزيئات الأخرى تقاوم وتمتص الطاقة
+/// 2. Spring-Damper شديد الصلابة (1500) → يوقف الحركة بدل نقلها
+/// 3. criticalDamping بالقيمة الكاملة → يمتص كل الطاقة في إطارات قليلة
+/// 4. ropeDamping = 0.5 (قديم محفوظ في Scene) → تخميد شديد جداً
 /// </summary>
 [DefaultExecutionOrder(-200)]
 public class PendulumSimulationManager : MonoBehaviour
 {
     [Header("Rope Settings")]
-    [Tooltip("طول الحبل الكلي")]
+    [Tooltip("طول الحبل الكلي بالمتر")]
     public float ropeLength = 10f;
-    
-    [Tooltip("عدد الجزيئات — زيادتها تزيد التخميد الطبيعي")]
-    public int segmentCount = 15;
-    
+
+    [Tooltip("عدد مقاطع الحبل (10-15 كافٍ)")]
+    public int segmentCount = 12;
+
     public RopeMaterial ropeMaterial = RopeMaterial.Cotton;
     public LineRenderer lineRenderer;
-    
-    [Tooltip("قوة الدفع الابتدائية للتأرجح")]
-    public Vector3 initialPush = new Vector3(0.05f, 0f, 0.02f);
+
+    [Header("Swing Settings")]
+    [Tooltip("زاوية الإمالة الابتدائية بالدرجات — 30° = أرجوحة هادئة، 60° = أرجوحة قوية")]
+    [Range(5f, 80f)]
+    public float initialSwingAngle = 45f;
+
+    [Tooltip("اتجاه الإمالة الابتدائية (X=يمين/يسار، Z=أمام/خلف)")]
+    public Vector2 swingDirection = new Vector2(1f, 0f);
 
     [Header("Rope Physics")]
-    [Tooltip("عدد الخطوات الفرعية لكل إطار")]
-    [Range(1, 8)]
-    public int ropeSubSteps = 3;
-    
+    [Tooltip("عدد الخطوات الفرعية لكل إطار (4 = توازن جيد بين الدقة والأداء)")]
+    [Range(2, 10)]
+    public int ropeSubSteps = 4;
+
     [Tooltip("عدد تكرارات محلّل القيود")]
-    [Range(1, 50)]
-    public int solverIterations = 20;
-    
-    [Tooltip("مقاومة الهواء (0.1 - 1.0 لحركة واقعية)")]
-    [Range(0f, 5f)]
-    public float ropeDamping = 0.5f;
+    [Range(5, 40)]
+    public int solverIterations = 15;
+
+    [Tooltip("تخميد الهواء — 0.02: أرجوحة تدوم طويلاً | 0.08: تتوقف أسرع")]
+    [Range(0.005f, 0.15f)]
+    public float airDamping = 0.025f;
 
     [Header("Bucket Mass")]
-    [Tooltip("كتلة الدلو فارغاً")]
     [Range(1f, 100f)]
     public float emptyBucketMass = 20f;
-    
-    [Tooltip("كتلة السائل داخل الدلو")]
+
     [Range(0f, 200f)]
     public float fluidMass = 30f;
-    
-    [Header("Fluid & Bucket Settings")]
-    [Tooltip("اسحب هنا كائن FluidSim")]
-    public FluidSim fluidSimulation;
-    
-    [Tooltip("إزاحة نقطة اتصال الحبل بالدلو")]
-    public Vector3 bucketOffset = new Vector3(0f, -1.5f, 0f);
-    
-    [Header("Bucket Physics (Soft Coupling)")]
-    [Tooltip("قوة الزنبرك الذي يربط الدلو بالحبل (أعلى = أقسى)")]
-    [Range(100f, 5000f)]
-    public float bucketSpringStiffness = 1500f;
-    
-    [Tooltip("تخميد الزنبرك لامتصاص الاهتزازات (أعلى = يمتص أسرع لكن قد يبطئ الحركة)")]
-    [Range(10f, 500f)]
-    public float bucketSpringDamping = 100f;
-    
-    private Rope rope;
-    
-    // موقع وسرعة الدلو (مفصولة عن الحبل لامتصاص الاهتزاز)
-    private Vector3 bucketPosition;
-    private Vector3 bucketVelocity;
 
-    // حالة السحب بالماوس (Mouse Joint)
-    private bool isDraggingBucket = false;
-    private Vector3 dragTargetPosition;
+    [Header("Fluid & Bucket Settings")]
+    public FluidSim fluidSimulation;
+
+    [Tooltip("إزاحة مركز الدلو عن نقطة اتصال الحبل")]
+    public Vector3 bucketOffset = new Vector3(0f, -1.5f, 0f);
+
+    // ── private ──────────────────────────────────────────────────
+    private Rope    _rope;
+    private Vector3 _bucketPos;
+    private Vector3 _bucketVel;
+    private bool    _isDragging;
+    private Vector3 _dragTarget;
 
     public float TotalBucketMass => emptyBucketMass + fluidMass;
 
+    // ── Start ─────────────────────────────────────────────────────
     void Start()
     {
-        rope = new Rope(transform.position, ropeLength, segmentCount, ropeMaterial, TotalBucketMass);
-        rope.SolverIterations = solverIterations;
-        
-        // الدفعة الابتدائية
-        VerletParticle bucketNode = rope.Particles[rope.Particles.Count - 1];
-        bucketNode.PreviousPosition = bucketNode.Position - initialPush;
-        
-        // تهيئة الموقع والسرعة للدلو
-        bucketPosition = bucketNode.Position + bucketOffset;
-        bucketVelocity = Vector3.zero;
-        
+        _rope = new Rope(transform.position, ropeLength, segmentCount,
+                         ropeMaterial, TotalBucketMass);
+        _rope.SolverIterations = solverIterations;
+
+        // ── الإمالة الابتدائية الصحيحة ────────────────────────────
+        // بدلاً من دفع جزيئة واحدة، نضع كل الجزيئات في موضع مائل
+        // كأن الأرجوحة سُحبت للجانب وأُفلتت — الجاذبية تُسرّع تلقائياً
+        ApplyInitialSwing();
+
+        // تهيئة الدلو — الإزاحة على طول اتجاه الحبل (Vector3.down عند البداية)
+        Vector3 ropeEnd = _rope.Particles[_rope.Particles.Count - 1].Position;
+        _bucketPos = ropeEnd + Vector3.down * Mathf.Abs(bucketOffset.y);
+        _bucketVel = Vector3.zero;
+
         if (fluidSimulation != null)
+            fluidSimulation.transform.position = _bucketPos;
+    }
+
+    /// <summary>
+    /// يُمال الحبل كاملاً بزاوية <see cref="initialSwingAngle"/> في اتجاه <see cref="swingDirection"/>.
+    /// كل جزيئة تأخذ موضعها على القوس المائل — الجزيئات ليست ساكنة عند الإطلاق.
+    /// PreviousPosition = Position (سرعة ابتدائية = صفر) — الجاذبية تبدأ الحركة.
+    /// </summary>
+    void ApplyInitialSwing()
+    {
+        if (_rope.Particles.Count < 2) return;
+
+        Vector3 anchor     = _rope.Particles[0].Position;
+        float   angleRad   = initialSwingAngle * Mathf.Deg2Rad;
+        Vector3 dir2D      = new Vector3(swingDirection.x, 0f, swingDirection.y).normalized;
+        float   segLen     = ropeLength / segmentCount;
+
+        for (int i = 1; i < _rope.Particles.Count; i++)
         {
-            fluidSimulation.transform.position = bucketPosition;
+            // كل جزيئة على قوس دائري مائل بالزاوية
+            // الجزيئة i تبعد (i × segLen) عن نقطة التعليق على الحبل
+            float dist = i * segLen;
+
+            // الموضع على القوس المائل:
+            // X (أو Z) = dist × sin(angle) في اتجاه الإمالة
+            // Y        = -dist × cos(angle) للأسفل
+            Vector3 newPos = anchor
+                + dir2D   * (dist * Mathf.Sin(angleRad))
+                + Vector3.down * (dist * Mathf.Cos(angleRad));
+
+            _rope.Particles[i].Position         = newPos;
+            _rope.Particles[i].PreviousPosition = newPos; // سرعة ابتدائية = صفر
         }
     }
 
+    // ── FixedUpdate ───────────────────────────────────────────────
     void FixedUpdate()
     {
-        if (fluidSimulation != null && fluidSimulation.isPaused)
-            return;
+        if (fluidSimulation != null && fluidSimulation.isPaused) return;
 
-        // ═══ تحديث الخصائص ═══
-        rope.SolverIterations = solverIterations;
-        rope.SetEndpointMass(TotalBucketMass);
-        
-        foreach (var particle in rope.Particles)
-        {
-            particle.DampingFactor = ropeDamping;
-        }
+        // تحديث خصائص الحبل من Inspector في كل إطار
+        _rope.SolverIterations = solverIterations;
+        _rope.SetEndpointMass(TotalBucketMass);
 
-        // ═══════════════════════════════════════════════════════════════
-        // Master Physics Loop (حلقة الفيزياء الرئيسية)
-        // ═══════════════════════════════════════════════════════════════
-        float dt = Time.fixedDeltaTime;
+        // نفس معامل التخميد على جميع الجزيئات — موحّد لمنع الالتواء
+        foreach (var p in _rope.Particles)
+            p.DampingFactor = airDamping;
+
+        float dt    = Time.fixedDeltaTime;
         float subDt = dt / ropeSubSteps;
 
         for (int step = 0; step < ropeSubSteps; step++)
         {
-            // 0. سحب الدلو بالماوس (Mouse Spring / Joint)
-            if (isDraggingBucket && rope.Particles.Count > 0)
+            // ── السحب بالماوس ──────────────────────────────────────
+            if (_isDragging && _rope.Particles.Count > 0)
             {
-                VerletParticle bucketNode = rope.Particles[rope.Particles.Count - 1];
-                
-                // قوة سحب الماوس نحو نقطة الهدف: استخدام قوة منطقية (كقوة يد الإنسان) 
-                // بدلاً من القوة الخرافية السابقة التي كانت تجمد حركة الحبل لتعارضها مع القيود
-                float dragStiffness = 1500f; 
-                Vector3 dragForce = (dragTargetPosition - bucketNode.Position) * dragStiffness; 
-                
-                // تخميد حرج لمنع الاهتزاز أثناء السحب 
-                float dragDampingFactor = 2f * Mathf.Sqrt(dragStiffness * bucketNode.Mass);
-                Vector3 nodeVel = (bucketNode.Position - bucketNode.PreviousPosition) / subDt;
-                Vector3 dragDamping = -nodeVel * dragDampingFactor;
-                
-                Vector3 dragAccel = (dragForce + dragDamping) / bucketNode.Mass;
-                
-                // التطبيق الصحيح للتسارع في نظام Verlet
-                bucketNode.PreviousPosition -= dragAccel * (subDt * subDt);
+                var tip = _rope.Particles[_rope.Particles.Count - 1];
+
+                float   k          = 5000f;
+                Vector3 tipVel     = (tip.Position - tip.PreviousPosition) / subDt;
+                float   c          = 2f * Mathf.Sqrt(k * tip.Mass);
+                Vector3 accel      = ((_dragTarget - tip.Position) * k - tipVel * c) / tip.Mass;
+
+                tip.PreviousPosition -= accel * (subDt * subDt);
             }
 
-            // 1. محاكاة الحبل
-            rope.Simulate(subDt, Physics.gravity);
+            // ── محاكاة الحبل ───────────────────────────────────────
+            _rope.Simulate(subDt, Physics.gravity);
 
-            // 2. تحديث موقع الدلو عبر نظام Spring-Damper
-            if (fluidSimulation != null && rope.Particles.Count > 0)
+            // ── ربط الدلو بالحبل — ربط مباشر بدون Spring ─────────
+            if (_rope.Particles.Count > 0)
             {
-                VerletParticle bucketNode = rope.Particles[rope.Particles.Count - 1];
-                Vector3 targetPosition = bucketNode.Position + bucketOffset;
-                
-                // قوة الزنبرك (Spring Force)
-                Vector3 displacement = bucketPosition - targetPosition;
-                Vector3 springForce = -bucketSpringStiffness * displacement;
-                
-                // التخميد الحرج (Critical Damping) يحسب تلقائياً لمنع أي اهتزازات إضافية من الزنبرك نهائياً!
-                float criticalDamping = 2f * Mathf.Sqrt(bucketSpringStiffness * TotalBucketMass);
-                Vector3 dampingForce = -criticalDamping * bucketVelocity;
-                
-                // حساب التسارع
-                Vector3 totalForce = springForce + dampingForce + (Physics.gravity * TotalBucketMass);
-                Vector3 acceleration = totalForce / TotalBucketMass;
-                
-                // تحديث السرعة والموقع
-                bucketVelocity += acceleration * subDt;
-                Vector3 nextBucketPosition = bucketPosition + bucketVelocity * subDt;
-                
-                // استخراج مراكز السائل للإطار الحالي والقادم
-                Vector3 startCentre = GetFluidCentre(bucketPosition);
-                Vector3 endCentre = GetFluidCentre(nextBucketPosition);
-                
-                // تحديث موقع الـ Transform
-                fluidSimulation.transform.position = nextBucketPosition;
-                
-                // 3. محاكاة السائل
-                fluidSimulation.SimulateSubstep(subDt, bucketVelocity, startCentre, endCentre);
-                
-                bucketPosition = nextBucketPosition;
+                var tip = _rope.Particles[_rope.Particles.Count - 1];
+
+                // اتجاه الحبل عند طرفه (من الجزيئة قبل الأخيرة للأخيرة)
+                Vector3 ropeDir = Vector3.down; // افتراضي إذا لم يتوفر جزيئتان
+                if (_rope.Particles.Count >= 2)
+                {
+                    var prev = _rope.Particles[_rope.Particles.Count - 2];
+                    Vector3 d = tip.Position - prev.Position;
+                    if (d.sqrMagnitude > 0.0001f)
+                        ropeDir = d.normalized;
+                }
+
+                // الإزاحة على طول اتجاه الحبل (بدلاً من Vector3.down الثابت)
+                // bucketOffset.y = المسافة من طرف الحبل لمركز الدلو على المحور المحلي
+                Vector3 newPos = tip.Position + ropeDir * Mathf.Abs(bucketOffset.y);
+
+                // السرعة المشتقة من حركة طرف الحبل
+                _bucketVel = (newPos - _bucketPos) / subDt;
+                _bucketPos = newPos;
+
+                // ── دوران الدلو مع الحبل ─────────────────────────────
+                if (fluidSimulation != null && ropeDir.sqrMagnitude > 0.0001f)
+                {
+                    Quaternion targetRot = Quaternion.FromToRotation(Vector3.down, ropeDir);
+                    fluidSimulation.transform.rotation = targetRot;
+                }
+
+                if (fluidSimulation != null)
+                {
+                    Vector3 startCentre = GetFluidCentre(_bucketPos);
+                    Vector3 endCentre   = GetFluidCentre(newPos);
+
+                    fluidSimulation.transform.position = newPos;
+                    fluidSimulation.SimulateSubstep(subDt, _bucketVel, startCentre, endCentre);
+                }
             }
         }
 
-        // ═══ رسم الحبل ═══
+        // ── رسم الحبل ─────────────────────────────────────────────
         if (lineRenderer != null)
         {
-            lineRenderer.positionCount = rope.Particles.Count;
-            for (int i = 0; i < rope.Particles.Count; i++)
-            {
-                lineRenderer.SetPosition(i, rope.Particles[i].Position);
-            }
+            lineRenderer.positionCount = _rope.Particles.Count;
+            for (int i = 0; i < _rope.Particles.Count; i++)
+                lineRenderer.SetPosition(i, _rope.Particles[i].Position);
         }
 
-        // 4. العمليات البعدية للسائل (تحديث الرغوة، تصيير الخريطة الكثافية)
+        // ── ما بعد المحاكاة ────────────────────────────────────────
         if (fluidSimulation != null)
-        {
             fluidSimulation.PostSimulationFrame(dt);
-        }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // التحكم بالماوس (يتم استدعاؤه من CylinderDragger)
-    // ═══════════════════════════════════════════════════════════════
+    // ── Mouse drag API (يُستدعى من CylinderDragger) ──────────────
+
     public void BeginDrag()
     {
-        if (rope == null || rope.Particles.Count == 0) return;
-        isDraggingBucket = true;
-        // نضبط نقطة الهدف على موقع العقدة الحالي لتجنب القفزات
-        dragTargetPosition = rope.Particles[rope.Particles.Count - 1].Position;
+        if (_rope == null || _rope.Particles.Count == 0) return;
+        _isDragging = true;
+        _dragTarget = _rope.Particles[_rope.Particles.Count - 1].Position;
     }
 
     public void UpdateDragPosition(Vector3 deltaPos)
     {
-        dragTargetPosition += deltaPos;
-        
-        // منع نقطة السحب من الابتعاد كثيراً عن الحبل لتجنب قوى خرافية وتمزق المفاصل
-        if (rope != null && rope.Particles.Count > 0)
+        _dragTarget += deltaPos;
+
+        if (_rope != null && _rope.Particles.Count > 0)
         {
-            Vector3 anchorPos = rope.Particles[0].Position;
-            Vector3 offset = dragTargetPosition - anchorPos;
-            float maxLen = ropeLength * 1.5f; 
+            Vector3 anchor = _rope.Particles[0].Position;
+            Vector3 offset = _dragTarget - anchor;
+            float   maxLen = ropeLength * 1.5f;
             if (offset.magnitude > maxLen)
-            {
-                dragTargetPosition = anchorPos + offset.normalized * maxLen;
-            }
+                _dragTarget = anchor + offset.normalized * maxLen;
         }
     }
 
     public void EndDrag()
     {
-        isDraggingBucket = false;
+        _isDragging = false;
     }
+
+    // ── helpers ───────────────────────────────────────────────────
 
     private Vector3 GetFluidCentre(Vector3 basePos)
     {
         if (fluidSimulation == null) return basePos;
         if (fluidSimulation.bucketRenderer != null)
         {
-            float simHalfH = fluidSimulation.Scale.y * 0.5f;
+            float simHalfH     = fluidSimulation.Scale.y * 0.5f;
             float bucketTop    =  simHalfH * fluidSimulation.bucketRenderer.heightScale;
             float bucketBottom = -simHalfH - fluidSimulation.bucketRenderer.bottomPadding;
             float centreY      = (bucketTop + bucketBottom) * 0.5f;
-            return basePos + Vector3.up * centreY;
+            // نستخدم محور Y المحلي للدلو (بعد الدوران) بدلاً من Vector3.up العالمي
+            Vector3 localUp = fluidSimulation.transform.up;
+            return basePos + localUp * centreY;
         }
         return basePos;
     }

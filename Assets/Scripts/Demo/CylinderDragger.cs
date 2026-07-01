@@ -104,8 +104,9 @@ namespace Seb.Fluid.Demo
             camForward.y       = 0f;
             if (camForward.sqrMagnitude > 0.001f) camForward.Normalize();
 
-            // Vertical mouse movement → Y axis
-            Vector3 displacement = camRight * dx * horizontalSpeed + Vector3.up * dy * verticalSpeed;
+            // نضاعف السرعة داخلياً بشكل كبير جداً (× 8) لضمان قدرة المستخدم على سحب البندول 
+            // لزوايا ضخمة (مثل 90 درجة) بمسحة ماوس بسيطة، متجاوزين أي قيم قديمة في الـ Inspector.
+            Vector3 displacement = camRight * dx * (horizontalSpeed * 8f) + Vector3.up * dy * (verticalSpeed * 8f);
 
             if (manager != null)
             {
