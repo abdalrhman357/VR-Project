@@ -85,11 +85,11 @@ namespace Seb.Fluid.Simulation
 		SpatialHash spatialHash;
 
 		// State
-		bool isPaused;
+		public bool isPaused;
 		bool pauseNextFrame;
 		float smoothRadiusOld;
 		float simTimer;
-		bool inSlowMode;
+		public bool inSlowMode;
 		Spawner3D.SpawnData spawnData;
 		Dictionary<ComputeBuffer, string> bufferNameLookup;
 		Vector3 prevCentre3;
@@ -199,54 +199,35 @@ namespace Seb.Fluid.Simulation
 				prevCentre3 = transform.position;
 			}
 
-			if (renderToTex3D) RunSimulationFrame(0);
+			if (renderToTex3D) UpdateDensityMap();
 
 			SimulationInitCompleted?.Invoke(this);
 		}
 
 		void Update()
 		{
-			if (!isPaused)
-			{
-				float maxDeltaTime = maxTimestepFPS > 0 ? 1 / maxTimestepFPS : float.PositiveInfinity;
-				float dt = Mathf.Min(Time.deltaTime * ActiveTimeScale, maxDeltaTime);
-				RunSimulationFrame(dt);
-			}
-
-			if (pauseNextFrame) { isPaused = true; pauseNextFrame = false; }
-
 			HandleInput();
 		}
 
-		void RunSimulationFrame(float frameDeltaTime)
+		public void SimulateSubstep(float subStepDeltaTime, Vector3 bucketVelocity, Vector3 startCentre, Vector3 endCentre)
 		{
-			float subStepDeltaTime = frameDeltaTime / iterationsPerFrame;
+			if (isPaused) return;
+
+			simTimer += subStepDeltaTime;
+
+			UpdateSettings(subStepDeltaTime, subStepDeltaTime, bucketVelocity); // Pass subStepDeltaTime for white particles too
+
+			compute.SetVector("prevCentre3", startCentre);
+			compute.SetVector("centre3", endCentre);
 			
-			Vector3 targetCentre = transform.position;
-			if (bucketRenderer != null)
-			{
-				float simHalfH = Scale.y * 0.5f;
-				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
-				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
-				float centreY      = (bucketTop + bucketBottom) * 0.5f;
-				targetCentre = transform.position + Vector3.up * centreY;
-			}
-			Vector3 startCentre = prevCentre3;
-			Vector3 endCentre = targetCentre;
-
-			UpdateSettings(subStepDeltaTime, frameDeltaTime);
-
-			for (int i = 0; i < iterationsPerFrame; i++)
-			{
-				simTimer += subStepDeltaTime;
-				float t0 = (float)i / iterationsPerFrame;
-				float t1 = (float)(i + 1) / iterationsPerFrame;
-				compute.SetVector("prevCentre3", Vector3.Lerp(startCentre, endCentre, t0));
-				compute.SetVector("centre3", Vector3.Lerp(startCentre, endCentre, t1));
-				RunSimulationStep();
-			}
+			RunSimulationStep();
 			
 			prevCentre3 = endCentre;
+		}
+
+		public void PostSimulationFrame(float frameDeltaTime)
+		{
+			if (isPaused) return;
 
 			if (foamActive)
 			{
@@ -292,16 +273,12 @@ namespace Seb.Fluid.Simulation
 			compute.SetFloat("K_SpikyPow3Grad", 45 / (Mathf.PI      * Mathf.Pow(r, 6)));
 		}
 
-		void UpdateSettings(float stepDeltaTime, float frameDeltaTime)
+		void UpdateSettings(float stepDeltaTime, float whiteParticleDeltaTime, Vector3 bucketVelocity)
 		{
 			if (smoothingRadius != smoothRadiusOld) { smoothRadiusOld = smoothingRadius; UpdateSmoothingConstants(); }
 
 			Vector3 simBoundsSize   = transform.localScale;
-			Vector3 simBoundsCentre = transform.position;
 
-			// When a BucketRenderer is assigned, collision bounds = bucket inner wall.
-			// The bucket inner wall = simR + radiusPadding, so we pass that directly
-			// as boundsSize. This way changing Scale changes both equally.
 			if (bucketRenderer != null)
 			{
 				float simHalfH = Scale.y * 0.5f;
@@ -310,14 +287,12 @@ namespace Seb.Fluid.Simulation
 				float bucketTop    =  simHalfH * bucketRenderer.heightScale;
 				float bucketBottom = -simHalfH - bucketRenderer.bottomPadding;
 				float bucketHeight =  bucketTop - bucketBottom;
-				float centreY      = (bucketTop + bucketBottom) * 0.5f;
 
 				simBoundsSize   = new Vector3(innerR * 2f, bucketHeight, innerR * 2f);
-				simBoundsCentre = transform.position + Vector3.up * centreY;
 			}
 
 			compute.SetFloat("deltaTime",              stepDeltaTime);
-			compute.SetFloat("whiteParticleDeltaTime", frameDeltaTime);
+			compute.SetFloat("whiteParticleDeltaTime", whiteParticleDeltaTime);
 			compute.SetFloat("simTime",                simTimer);
 			compute.SetFloat("gravity",                gravity);
 			compute.SetFloat("collisionDamping",       collisionDamping);
@@ -327,6 +302,7 @@ namespace Seb.Fluid.Simulation
 			compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
 			compute.SetFloat("viscosityStrength",      viscosityStrength);
 			compute.SetVector("boundsSize", simBoundsSize);
+			compute.SetVector("bucketVelocity", bucketVelocity);
 
 			// Bottom hole
 			compute.SetFloat("holeRadius",  holeRadius);
@@ -368,7 +344,10 @@ namespace Seb.Fluid.Simulation
 			{
 				pauseNextFrame = true;
 				SetInitialBufferData(spawnData);
-				if (renderToTex3D) RunSimulationFrame(0);
+				if (renderToTex3D) {
+					// Dummy update to clear map
+					UpdateDensityMap();
+				}
 			}
 		}
 

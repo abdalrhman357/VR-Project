@@ -29,20 +29,24 @@ namespace Seb.Fluid.Demo
         [Tooltip("Leave empty — auto-found at Start.")]
         public OrbitCam orbitCam;
 
+        [Tooltip("Leave empty — auto-found at Start.")]
+        public PendulumSimulationManager manager;
+
         // ── private state ────────────────────────────────────────────────
         Camera  mainCam;
         bool    isDragging;
-        Vector3 targetPosition;
         Vector2 lastMousePos;
 
         // ── Unity ────────────────────────────────────────────────────────
         void Start()
         {
-            mainCam        = Camera.main;
-            targetPosition = transform.position;
+            mainCam = Camera.main;
 
             if (orbitCam == null && mainCam != null)
                 orbitCam = mainCam.GetComponent<OrbitCam>();
+
+            if (manager == null)
+                manager = FindObjectOfType<PendulumSimulationManager>();
         }
 
         void Update()
@@ -58,10 +62,6 @@ namespace Seb.Fluid.Demo
             // Drag in progress
             if (isDragging)
                 TickDrag();
-
-            // Smooth follow
-            transform.position = Vector3.Lerp(transform.position, targetPosition,
-                                              followSpeed * Time.deltaTime);
         }
 
         // ── helpers ──────────────────────────────────────────────────────
@@ -73,12 +73,16 @@ namespace Seb.Fluid.Demo
 
             // Disable orbit so RMB doesn't also rotate the camera
             if (orbitCam != null) orbitCam.enabled = false;
+
+            if (manager != null) manager.BeginDrag();
         }
 
         void EndDrag()
         {
             isDragging = false;
             if (orbitCam != null) orbitCam.enabled = true;
+
+            if (manager != null) manager.EndDrag();
         }
 
         void TickDrag()
@@ -101,8 +105,12 @@ namespace Seb.Fluid.Demo
             if (camForward.sqrMagnitude > 0.001f) camForward.Normalize();
 
             // Vertical mouse movement → Y axis
-            targetPosition += camRight   * dx * horizontalSpeed;
-            targetPosition += Vector3.up * dy * verticalSpeed;
+            Vector3 displacement = camRight * dx * horizontalSpeed + Vector3.up * dy * verticalSpeed;
+
+            if (manager != null)
+            {
+                manager.UpdateDragPosition(displacement);
+            }
         }
     }
 }

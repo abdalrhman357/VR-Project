@@ -101,6 +101,7 @@ float Remap01(float val, float minVal, float maxVal)
 // Cylinder centre in world space (updated every frame from CPU)
 const float3 centre3;
 const float3 prevCentre3;
+const float3 bucketVelocity;
 
 // Bottom hole settings
 const float  holeRadius;
@@ -129,14 +130,14 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
         localPos.x = n2D.x * radius;
         localPos.z = n2D.y * radius;
 
-        float2 velXZ     = float2(vel.x, vel.z);
-        float  velNormal = dot(velXZ, n2D);
+        float2 relVelXZ  = float2(vel.x - bucketVelocity.x, vel.z - bucketVelocity.z);
+        float  velNormal = dot(relVelXZ, n2D);
         if (velNormal > 0)
         {
-            velXZ -= 2.0 * velNormal * n2D;
-            velXZ *= collisionDamping;
-            vel.x  = velXZ.x;
-            vel.z  = velXZ.y;
+            relVelXZ -= 2.0 * velNormal * n2D;
+            relVelXZ *= collisionDamping;
+            vel.x  = relVelXZ.x + bucketVelocity.x;
+            vel.z  = relVelXZ.y + bucketVelocity.z;
         }
         radialDst = radius;
     }
@@ -153,7 +154,11 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
             if (prevLocalY > -halfHeight - 0.1)
             {
                 localPos.y = -halfHeight;
-                vel.y      = abs(vel.y) * collisionDamping;
+                float relVelY = vel.y - bucketVelocity.y;
+                if (relVelY < 0)
+                {
+                    vel.y = (-relVelY * collisionDamping) + bucketVelocity.y;
+                }
             }
         }
     }
@@ -162,7 +167,11 @@ void ResolveCollisions(inout float3 pos, inout float3 vel, float collisionDampin
     if (localPos.y >= halfHeight)
     {
         localPos.y = halfHeight;
-        vel.y      = -abs(vel.y) * collisionDamping;
+        float relVelY = vel.y - bucketVelocity.y;
+        if (relVelY > 0)
+        {
+            vel.y = (-relVelY * collisionDamping) + bucketVelocity.y;
+        }
     }
 
     pos = localPos + centre3;
