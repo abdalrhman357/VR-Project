@@ -30,6 +30,18 @@ public class PendulumSimulationManager : MonoBehaviour
     public RopeMaterial ropeMaterial = RopeMaterial.Cotton;
     public LineRenderer lineRenderer;
 
+    [Header("Rope Appearance — مظهر الحبل")]
+    [Tooltip("عرض الحبل عند نقطة التعليق (الأعلى)")]
+    [Range(0.005f, 0.2f)]
+    public float ropeWidthTop    = 0.03f;
+
+    [Tooltip("عرض الحبل عند الدلو (الأسفل)")]
+    [Range(0.005f, 0.2f)]
+    public float ropeWidthBottom = 0.02f;
+
+    [Tooltip("لون الحبل")]
+    public Color ropeColor = new Color(0.55f, 0.35f, 0.15f, 1f);
+
     [Header("Swing Settings")]
     [Tooltip("زاوية الإمالة الابتدائية بالدرجات — 30° = أرجوحة هادئة، 60° = أرجوحة قوية")]
     [Range(5f, 80f)]
@@ -83,6 +95,7 @@ public class PendulumSimulationManager : MonoBehaviour
     private Vector3 _bucketVel;
     private bool    _isDragging;
     private Vector3 _dragTarget;
+    private Material _ropeMaterial; // material مخصص للحبل
 
     public float TotalBucketMass => emptyBucketMass + fluidMass;
 
@@ -92,6 +105,19 @@ public class PendulumSimulationManager : MonoBehaviour
         _rope = new Rope(transform.position, ropeLength, segmentCount,
                          ropeMaterial, TotalBucketMass);
         _rope.SolverIterations = solverIterations;
+
+        // تهيئة material الحبل مرة واحدة
+        if (lineRenderer != null)
+        {
+            Shader sh = Shader.Find("Universal Render Pipeline/Unlit")
+                     ?? Shader.Find("Unlit/Color")
+                     ?? Shader.Find("Standard");
+            _ropeMaterial = new Material(sh);
+            lineRenderer.material = _ropeMaterial;
+        }
+
+        // تطبيق مظهر الحبل الابتدائي
+        ApplyRopeAppearance();
 
         // ── الإمالة الابتدائية الصحيحة ────────────────────────────
         // بدلاً من دفع جزيئة واحدة، نضع كل الجزيئات في موضع مائل
@@ -217,6 +243,7 @@ public class PendulumSimulationManager : MonoBehaviour
         // ── رسم الحبل ─────────────────────────────────────────────
         if (lineRenderer != null)
         {
+            ApplyRopeAppearance();
             lineRenderer.positionCount = _rope.Particles.Count;
             for (int i = 0; i < _rope.Particles.Count; i++)
                 lineRenderer.SetPosition(i, _rope.Particles[i].Position);
@@ -271,6 +298,28 @@ public class PendulumSimulationManager : MonoBehaviour
 
     // ── helpers ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// يطبّق عرض ولون الحبل على LineRenderer.
+    /// يُستدعى في Start وفي كل FixedUpdate لالتقاط أي تغيير من Inspector.
+    /// </summary>
+    private void ApplyRopeAppearance()
+    {
+        if (lineRenderer == null) return;
+
+        lineRenderer.startWidth = ropeWidthTop;
+        lineRenderer.endWidth   = ropeWidthBottom;
+        lineRenderer.startColor = ropeColor;
+        lineRenderer.endColor   = ropeColor;
+
+        // نطبق اللون على الـ material المخصص مباشرة
+        if (_ropeMaterial != null)
+        {
+            _ropeMaterial.color = ropeColor;
+            // دعم URP Unlit الذي يستخدم _BaseColor بدلاً من _Color
+            _ropeMaterial.SetColor("_BaseColor", ropeColor);
+        }
+    }
+
     private Vector3 GetFluidCentre(Vector3 basePos)
     {
         if (fluidSimulation == null) return basePos;
@@ -285,5 +334,11 @@ public class PendulumSimulationManager : MonoBehaviour
             return basePos + localUp * centreY;
         }
         return basePos;
+    }
+
+    void OnDestroy()
+    {
+        if (_ropeMaterial != null)
+            Destroy(_ropeMaterial);
     }
 }
