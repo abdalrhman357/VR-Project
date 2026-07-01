@@ -64,6 +64,19 @@ public class PendulumSimulationManager : MonoBehaviour
     [Tooltip("إزاحة مركز الدلو عن نقطة اتصال الحبل")]
     public Vector3 bucketOffset = new Vector3(0f, -1.5f, 0f);
 
+    [Header("Paint Canvas")]
+    [Tooltip("اسحب هنا كائن اللوحة الموضوعة أسفل البندول")]
+    public PaintCanvas paintCanvas;
+
+    [Tooltip("لون الطلاء المتساقط")]
+    public Color paintColor = Color.blue;
+
+    [Range(0.1f, 10f)]
+    public float paintViscosity = 1.5f;
+
+    [Range(0.001f, 0.05f)]
+    public float paintMass = 0.008f;
+
     // ── private ──────────────────────────────────────────────────
     private Rope    _rope;
     private Vector3 _bucketPos;
@@ -212,6 +225,20 @@ public class PendulumSimulationManager : MonoBehaviour
         // ── ما بعد المحاكاة ────────────────────────────────────────
         if (fluidSimulation != null)
             fluidSimulation.PostSimulationFrame(dt);
+
+        // ── إرسال جزيئات السائل إلى اللوحة ───────────────────────
+        // نستدعي ProcessGPUHits مرة واحدة في الإطار بعد اكتمال المحاكاة
+        if (paintCanvas != null && fluidSimulation != null)
+        {
+            paintCanvas.ProcessGPUHits(
+                fluidSimulation.positionBuffer,
+                fluidSimulation.velocityBuffer,
+                fluidSimulation.positionBuffer.count,
+                paintColor,
+                paintViscosity,
+                paintMass
+            );
+        }
     }
 
     // ── Mouse drag API (يُستدعى من CylinderDragger) ──────────────
